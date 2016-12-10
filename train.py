@@ -1,7 +1,7 @@
 import tensorflow as tf
 import time
 import datetime
-from src.build_net import build_net
+from src.architecture import build_net
 from src.util import check_snapshots
 
 
@@ -22,9 +22,9 @@ num_threads = 4
 check_snapshots()
 
 # build network
-summaries, solver, loss, queue_runner = build_net(batch_size,
-                                                  learning_rate,
-                                                  num_threads)
+summaries, solver, loss, loss_val, queue_runner = build_net(batch_size,
+                                                            learning_rate,
+                                                            num_threads)
 
 # config
 config = tf.ConfigProto()
@@ -54,7 +54,7 @@ with tf.Session(config=config) as sess:
 
         last_print = time.time()
         for i in range(iterations):
-            results = sess.run([summaries, solver, loss])
+            results = sess.run([summaries, solver, loss, loss_val])
 
             if (i + 1) % print_frequency == 0:
                 time_diff = time.time() - last_print

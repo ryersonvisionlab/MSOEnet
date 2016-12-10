@@ -4,7 +4,7 @@ from src.dataset import QueueRunner
 from src.components import *
 
 
-def data_layer():
+def data_layer(batch_size, num_threads):
     with tf.name_scope('data_layer'):
         num_channels = 1
         temporal_extent = 5
@@ -15,14 +15,14 @@ def data_layer():
         ucf101 = read_data_sets('/home/mtesfald/UCF-101-gt', temporal_extent)
 
         # read validation data
-        x_val, y_val = ucf101.validation_data()
+        x_val, y_val_ = ucf101.validation_data()
 
         with tf.device("/cpu:0"):
             queue_runner = QueueRunner(ucf101, input_shape, target_shape,
                                        batch_size, num_threads)
             x, y_ = queue_runner.get_inputs()
 
-        return x, y_, ucf101, queue_runner
+        return x, y_, x_val, y_val_, ucf101, queue_runner
 
 
 def loss_layer(y, y_):
@@ -37,10 +37,12 @@ def solver(learning_rate, loss):
         return train_step
 
 
-def summaries(epe, y, y_):
+def summaries(loss, loss_val, y, y_):
     with tf.name_scope('summaries'):
         # graph loss
-        tf.scalar_summary('loss', epe)
+        tf.scalar_summary('loss', loss)
+        # graph loss
+        tf.scalar_summary('loss (val)', loss_val)
 
         # visualize target and predicted flows
         tf.image_summary('flow 1', flowToColor(y), max_images=1)
@@ -52,7 +54,7 @@ def summaries(epe, y, y_):
         return merged
 
 
-def architecture(x, dataset):
+def architecture(x, x_val, dataset):
     with tf.name_scope('architecture'):
         """first convolutional layer"""
         kernel_height = 5
@@ -67,9 +69,13 @@ def architecture(x, dataset):
 
         # activation node
         h_conv1 = eltwise_square(conv3d(x, W_conv1) + b_conv1)
+        # activation node (validation)
+        h_conv1_val = eltwise_square(conv3d(x_val, W_conv1) + b_conv1)
 
         # avg pooling node
         h_pool1 = avg_pool_3x3x3(h_conv1)
+        # avg pooling node (validation)
+        h_pool1_val = avg_pool_3x3x3(h_conv1_val)
 
         """second convolutional layer"""
         temporal_extent = 1
@@ -86,9 +92,13 @@ def architecture(x, dataset):
 
         # pre-activation node
         conv2 = conv3d(h_pool1, W_conv2) + b_conv2
+        # pre-activation node (validation)
+        conv2_val = conv3d(h_pool1_val, W_conv2) + b_conv2
 
         # channel-wise l1 normalization
         conv2_l1norm = l1_normalize(conv2, 4)
+        # channel-wise l1 normalization (validation)
+        conv2_l1norm_val = l1_normalize(conv2_val, 4)
 
         """flow-out (decode) layer"""
         temporal_extent = 1
@@ -105,25 +115,34 @@ def architecture(x, dataset):
 
         # flow-out pre-activation node
         y = conv3d(conv2_l1norm, W_conv3) + b_conv3
+        # flow-out pre-activation node (validation)
+        y_val = conv3d(conv2_l1norm_val, W_conv3) + b_conv3
 
         # reshape node
         y = tf.reshape(y, [-1, target_shape[0],
                            target_shape[1],
                            target_shape[2]])
+        # reshape node (validation)
+        y_val = tf.reshape(y_val, [-1, target_shape[0],
+                                   target_shape[1],
+                                   target_shape[2]])
 
-        return y
+        return y, y_val
 
 
 def build_net(batch_size, learning_rate, num_threads):
     # attach data layer
-    x, y_, dataset, queue_runner = data_layer()
+    x, y_, x_val, y_val_, dataset, queue_runner = data_layer(batch_size,
+                                                             num_threads)
     # attach architecture
-    y = architecture(x, dataset)
+    y, y_val = architecture(x, dataset)
     # attach loss
     loss = loss_layer(y, y_)
+    # attach loss (validation)
+    loss_val = loss_layer(y_val, y_val_)
     # attach solver
     solver = solver(learning_rate, loss)
     # attach summaries
-    summaries = summaries(loss, y, y_)
+    summaries = summaries(loss, loss_val, y_val, y_val_)
 
-    return summaries, solver, loss, queue_runner
+    return summaries, solver, loss, loss_val, queue_runner
