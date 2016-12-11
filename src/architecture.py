@@ -4,15 +4,10 @@ from src.dataset import QueueRunner
 from src.components import *
 
 
-def data_layer(batch_size, num_threads):
+def data_layer(batch_size, num_threads, input_shape, target_shape):
     with tf.name_scope('data_layer'):
-        num_channels = 1
-        temporal_extent = 5
-        input_shape = [temporal_extent, 256, 256, num_channels]
-        target_shape = [256, 256, 2]
-
         # read UCF-101 image sequences with ground truth flows
-        ucf101 = read_data_sets('/home/mtesfald/UCF-101-gt', temporal_extent)
+        ucf101 = read_data_sets('/home/mtesfald/UCF-101-gt', input_shape[0])
 
         # read validation data
         x_val, y_val_ = ucf101.validation_data()
@@ -22,7 +17,7 @@ def data_layer(batch_size, num_threads):
                                        batch_size, num_threads)
             x, y_ = queue_runner.get_inputs()
 
-        return x, y_, x_val, y_val_, ucf101, queue_runner
+        return x, y_, tf.pack(x_val), tf.pack(y_val_), ucf101, queue_runner
 
 
 def loss_layer(y, y_):
@@ -31,22 +26,22 @@ def loss_layer(y, y_):
         return epe
 
 
-def solver(learning_rate, loss):
-    with tf.name_scope('solver'):
+def solver_layer(learning_rate, loss):
+    with tf.name_scope('solver_layer'):
         train_step = tf.train.AdamOptimizer(learning_rate).minimize(loss)
         return train_step
 
 
-def summaries(loss, loss_val, y, y_):
-    with tf.name_scope('summaries'):
+def summaries_layer(loss, loss_val, y, y_):
+    with tf.name_scope('summaries_layer'):
         # graph loss
         tf.scalar_summary('loss', loss)
         # graph loss
         tf.scalar_summary('loss (val)', loss_val)
 
         # visualize target and predicted flows
-        tf.image_summary('flow 1', flowToColor(y), max_images=1)
-        tf.image_summary('flow 2', flowToColor(y_), max_images=1)
+        tf.image_summary('flow predicted', flowToColor(y), max_images=3)
+        tf.image_summary('flow target', flowToColor(y_), max_images=3)
 
         # merge summaries
         merged = tf.merge_all_summaries()
@@ -54,13 +49,15 @@ def summaries(loss, loss_val, y, y_):
         return merged
 
 
-def architecture(x, x_val, dataset):
+def architecture(x, x_val, input_shape, target_shape):
     with tf.name_scope('architecture'):
         """first convolutional layer"""
+        temporal_extent = input_shape[0]
         kernel_height = 5
         kernel_width = 5
+        num_channels = int(x.get_shape()[4])
         num_filters = 32
-        W_conv1 = weight_variable([dataset.temporal_extent,
+        W_conv1 = weight_variable([temporal_extent,
                                    kernel_height,
                                    kernel_width,
                                    num_channels,
@@ -132,17 +129,23 @@ def architecture(x, x_val, dataset):
 
 def build_net(batch_size, learning_rate, num_threads):
     # attach data layer
+    num_channels = 1
+    temporal_extent = 5
+    input_shape = [temporal_extent, 256, 256, num_channels]
+    target_shape = [256, 256, 2]
     x, y_, x_val, y_val_, dataset, queue_runner = data_layer(batch_size,
-                                                             num_threads)
+                                                             num_threads,
+                                                             input_shape,
+                                                             target_shape)
     # attach architecture
-    y, y_val = architecture(x, dataset)
+    y, y_val = architecture(x, x_val, input_shape, target_shape)
     # attach loss
     loss = loss_layer(y, y_)
     # attach loss (validation)
     loss_val = loss_layer(y_val, y_val_)
     # attach solver
-    solver = solver(learning_rate, loss)
+    solver = solver_layer(learning_rate, loss)
     # attach summaries
-    summaries = summaries(loss, loss_val, y_val, y_val_)
+    summaries = summaries_layer(loss, loss_val, y_val, y_val_)
 
     return summaries, solver, loss, loss_val, queue_runner

@@ -9,11 +9,11 @@ from src.util import check_snapshots
 print_frequency = 1
 snapshot_frequency = 500
 
-batch_size = 100
+batch_size = 10
 iterations = 200000
 start_iteration = 0
 resume = False
-learning_rate = 1.5e-4
+learning_rate = 3e-4
 
 num_threads = 4
 """---------------------"""
@@ -61,14 +61,15 @@ with tf.Session(config=config) as sess:
                 it_per_sec = print_frequency / time_diff
                 remaining_it = iterations - i
                 eta = remaining_it / it_per_sec
-                print("Iteration " + str(i + 1) + ": loss: " +
-                      str(results[2]) + ", iterations per second: " +
-                      str(it_per_sec) + ", ETA: " +
+                print('Iteration ' + str(i + 1) + ': loss: ' +
+                      str(results[2]) + ' loss (val): ' +
+                      str(results[3]) + ", iterations per second: " +
+                      str(it_per_sec) + ', ETA: ' +
                       str(datetime.timedelta(seconds=eta)))
                 summary_writer.add_summary(results[0], i + 1)
                 summary_writer.flush()
                 last_print = time.time()
 
             if (i + 1) % snapshot_frequency == 0:
-                saver.save(sess, "snapshots/iter_" +
-                           str(i + 1).zfill(16) + ".ckpt")
+                saver.save(sess, 'snapshots/iter_' +
+                           str(i + 1).zfill(16) + '.ckpt')

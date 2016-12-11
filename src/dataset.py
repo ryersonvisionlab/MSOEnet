@@ -25,7 +25,6 @@ class DataSet(object):
     def training_data(self):
         return self._train
 
-    @property
     def validation_data(self):
         # Pick all validation sequences
         indices = np.arange(len(self._validation))
@@ -55,6 +54,10 @@ class DataSet(object):
             packaged_data.append(png_chunk)
             packaged_gts.append(gt_flo)
         return np.array(packaged_data), np.array(packaged_gts)
+
+    @property
+    def temporal_extent(self):
+        return self._temporal_extent
 
     @property
     def num_examples(self):
