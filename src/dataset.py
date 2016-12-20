@@ -5,6 +5,7 @@ import cv2
 import tensorflow as tf
 import threading
 from util import readFlowFile
+from scipy.ndimage import zoom
 
 
 class DataSet(object):
@@ -33,7 +34,10 @@ class DataSet(object):
         # from each sequence
         packaged_data = []
         packaged_gts = []
+        count = 0
         for sequence in sequences:
+            if count == 10:
+                break
             i = np.max(len(sequence['frames'])/2 - self._temporal_extent, 0)
             chunk = sequence['frames'][i:i+self._temporal_extent]
             # Read images in sequence and stack them into a single volume
@@ -46,14 +50,20 @@ class DataSet(object):
                                        axis=5)
                                        for frame in chunk))
             # Pick flow for middle frame
-            gt_flo = prefix + chunk[len(chunk)/2][0]
+            gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
             # Read flo file
             gt_flo = readFlowFile(gt_flo)
             # package the full image paths in each chunk as a data point
             # and provide the ground truth flow for the middle frame
             packaged_data.append(png_chunk)
             packaged_gts.append(gt_flo)
-        return np.array(packaged_data), np.array(packaged_gts)
+            count += 1
+
+        # wrap in numpy array (easier to work with)
+        packaged_data = np.array(packaged_data)
+        packaged_gts = np.array(packaged_gts)
+
+        return packaged_data, packaged_gts
 
     @property
     def temporal_extent(self):
@@ -100,7 +110,7 @@ class DataSet(object):
                                        axis=5)
                                        for frame in chunk))
             # pick flow for middle frame
-            gt_flo = prefix + chunk[len(chunk)/2][0]
+            gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
             # Read flo file
             gt_flo = readFlowFile(gt_flo)
             # package the full image paths in each chunk as a data point
@@ -114,7 +124,13 @@ class DataSet(object):
             # start next epoch
             self._index_in_epoch = batch_size
             assert batch_size <= self._num_examples
-        return np.array(packaged_data), np.array(packaged_gts)
+
+
+        # wrap in numpy array (easier to work with)
+        packaged_data = np.array(packaged_data)
+        packaged_gts = np.array(packaged_gts)
+
+        return packaged_data, packaged_gts
 
 
 def read_data_sets(train_dir,

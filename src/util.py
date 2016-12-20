@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import cv2
+import tensorflow as tf
 
 
 def readFlowFile(filename):
@@ -112,36 +113,40 @@ def warp_flow(img, flow):
     flow = -flow
     flow[:, :, 0] += np.arange(w)
     flow[:, :, 1] += np.arange(h)[:, np.newaxis]
-    res = cv2.remap(img, flow, None, cv2.INTER_LINEAR)
+    res = cv2.remap(img, flow, None, cv2.INTER_CUBIC)
 
     return res
 
 
-def check_snapshots():
-    snapshot_files = os.listdir('snapshots')
-    snapshot_files = [filename for filename in snapshot_files
-                      if filename[-5:] == '.ckpt']
-    snapshot_files.sort()
+def check_snapshots(root_folder=''):
+    snapshots_folder = root_folder + 'snapshots/'
+    logs_folder = root_folder + 'logs/'
 
-    if len(snapshot_files) > 0:
+    checkpoint = tf.train.latest_checkpoint(snapshots_folder)
+
+    resume = False
+    start_iteration = 0
+
+    if checkpoint:
         choice = ''
         while choice != 'y' and choice != 'n':
-            print 'Snapshot files detected ("+snapshot_files[-1]+") would you'\
-                  ' like to resume? (y/n)'
+            print 'Snapshot file detected (' + checkpoint + \
+                  ') would you like to resume? (y/n)'
             choice = raw_input().lower()
 
-            if choice == "y":
-                resume = True
-                start_iteration = int(snapshot_files[-1][5:-5])
-                print "resuming from iteration " + str(start_iteration)
+            if choice == 'y':
+                resume = checkpoint
+                start_iteration = int(checkpoint.split(snapshots_folder) \
+                                      [1][5:-5])
+                print 'resuming from iteration ' + str(start_iteration)
             else:
-                print "removing old snapshots and logs, training from scratch"
+                print 'removing old snapshots and logs, training from scratch'
                 resume = False
-                snapshot_files = os.listdir("snapshots")
-                log_files = os.listdir("logs")
-                for file in snapshot_files:
-                    os.remove("snapshots/"+file)
-                for file in log_files:
-                    os.remove("logs/"+file)
+                for file in os.listdir(snapshots_folder):
+                    os.remove(snapshots_folder + file)
+                for file in os.listdir(logs_folder):
+                    os.remove(logs_folder + file)
     else:
         print "No snapshots found, training from scratch"
+
+    return resume, start_iteration

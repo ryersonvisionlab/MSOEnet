@@ -1,151 +1,196 @@
 import tensorflow as tf
-from src.dataset import read_data_sets
-from src.dataset import QueueRunner
 from src.components import *
+from src.util import check_snapshots
+from src.MSOE import MSOE
+import time
+import datetime
 
 
-def data_layer(batch_size, num_threads, input_shape, target_shape):
-    with tf.name_scope('data_layer'):
-        # read UCF-101 image sequences with ground truth flows
-        ucf101 = read_data_sets('/home/mtesfald/UCF-101-gt', input_shape[0])
+class MSOEPyramid(object):
 
-        # read validation data
-        x_val, y_val_ = ucf101.validation_data()
+    def __init__(self, config):
+        # import config
+        self.user_config = config['user']
+        self.tf_config = config['tf']
+        
+        self.graph = tf.Graph()
+        with self.graph.as_default():
+            with tf.device('/gpu:1'):
+                """
+                Construct the MSOE pyramid graph structure
+                """
+                # retrieve data
+                self.input_layer, self.target, \
+                self.val_input_layer, self.val_target, \
+                self.queue_runner = data_layer('input',
+                                               self.user_config['dataset_path'],
+                                               self.user_config['batch_size'],
+                                               self.user_config['temporal_extent'],
+                                               self.user_config['num_threads'])
 
-        with tf.device("/cpu:0"):
-            queue_runner = QueueRunner(ucf101, input_shape, target_shape,
-                                       batch_size, num_threads)
-            x, y_ = queue_runner.get_inputs()
+                # assuming square input
+                self.input_hw = [self.input_layer.get_shape().as_list()[2],
+                                 self.input_layer.get_shape().as_list()[3]]
 
-        return x, y_, tf.pack(x_val), tf.pack(y_val_), ucf101, queue_runner
+                """ Create pyramid """
+                # initial MSOE on original input size (batchxHxWx2)
+                initial = MSOE('MSOE_0', self.input_layer).output
 
+                # add new axis (batchx1xHxWx2)
+                initial = tf.expand_dims(initial, 1)
 
-def loss_layer(y, y_):
-    with tf.name_scope('loss_layer'):
-        epe = l1_loss(y, y_)
-        return epe
+                # initialize pyramid
+                msoe_array = [initial]
+                for scale in range(1, self.user_config['num_scales']):
+                    # big to small
+                    factor = 1.0 / (2**scale)
+                    small_input_h = int(self.input_hw[0] * factor)
+                    small_input_w = int(self.input_hw[1] * factor)
 
+                    # downsample data (batchx2xhxwx1)
+                    small_input = bilinear_resample_volume('downsample',
+                                                           self.input_layer,
+                                                           tf.pack([small_input_h,
+                                                                    small_input_w]))
+                    
+                    # create MSOE and insert data
+                    small_output = MSOE('MSOE_' + str(scale),
+                                        small_input, reuse=True).output
 
-def solver_layer(learning_rate, loss):
-    with tf.name_scope('solver_layer'):
-        train_step = tf.train.AdamOptimizer(learning_rate).minimize(loss)
-        return train_step
+                    # upsample flow output (batchx1xHxWx64)
+                    output_layer = bilinear_resample_volume('upsample',
+                                                            small_output,
+                                                            tf.pack(self.input_hw))
 
+                    msoe_array.append(output_layer)
+                
+                # channel concatenate outputs (batchx1xHxWx64*num_scales)
+                concatenated = tf.concat(4, msoe_array)
 
-def summaries_layer(loss, loss_val, y, y_):
-    with tf.name_scope('summaries_layer'):
-        # graph loss
-        tf.scalar_summary('loss', loss)
-        # graph loss
-        tf.scalar_summary('loss (val)', loss_val)
+                # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
+                self.output = conv3d('conv4', concatenated, 1, 1, 2)
 
-        # visualize target and predicted flows
-        tf.image_summary('flow predicted', flowToColor(y), max_images=3)
-        tf.image_summary('flow target', flowToColor(y_), max_images=3)
+                # reshape (batch x H x W x 2)
+                output_shape = self.output.get_shape().as_list()
+                self.output = reshape('reshape', self.output,
+                                      [-1, output_shape[2],
+                                       output_shape[3], 2])
 
-        # merge summaries
-        merged = tf.merge_all_summaries()
+                # attach loss
+                self.loss = l1_loss('l1_loss', self.output, self.target)
 
-        return merged
+                # attach summaries
+                with tf.name_scope('summaries'):
+                    # fetch shared weights for conv1
+                    with tf.variable_scope('conv1', reuse=True):
+                        W_conv1 = tf.get_variable('weights')
 
+                    # graph loss
+                    tf.scalar_summary('loss', self.loss)
 
-def architecture(x, x_val, input_shape, target_shape):
-    with tf.name_scope('architecture'):
-        """first convolutional layer"""
-        temporal_extent = input_shape[0]
-        kernel_height = 5
-        kernel_width = 5
-        num_channels = int(x.get_shape()[4])
-        num_filters = 32
-        W_conv1 = weight_variable([temporal_extent,
-                                   kernel_height,
-                                   kernel_width,
-                                   num_channels,
-                                   num_filters])
-        b_conv1 = bias_variable([num_filters])
+                    # visualize target and predicted flows
+                    tf.image_summary('flow predicted',
+                                     flow_to_colour('flow_visualization',
+                                                    self.output),
+                                     max_images=1)
+                    tf.image_summary('flow target',
+                                     flow_to_colour('flow_visualization',
+                                                    self.target),
+                                     max_images=1)
+                    tf.image_summary('image',
+                                     self.input_layer[0],
+                                     max_images=5)
 
-        # activation node
-        h_conv1 = eltwise_square(conv3d(x, W_conv1) + b_conv1)
-        # activation node (validation)
-        h_conv1_val = eltwise_square(conv3d(x_val, W_conv1) + b_conv1)
+                    # visualize filters
+                    viz0 = W_conv1[0, :, :, :, :]
+                    viz1 = W_conv1[1, :, :, :, :]
+                    grid0 = put_kernels_on_grid('kernel_visualization',
+                                                viz0, 8, 4)
+                    grid1 = put_kernels_on_grid('kernel_visualization',
+                                                viz1, 8, 4)
+                    tf.image_summary('filter conv1 0', grid0)
+                    tf.image_summary('filter conv1 1', grid1)
 
-        # avg pooling node
-        h_pool1 = avg_pool_3x3x3(h_conv1)
-        # avg pooling node (validation)
-        h_pool1_val = avg_pool_3x3x3(h_conv1_val)
-
-        """second convolutional layer"""
-        temporal_extent = 1
-        kernel_width = 1
-        kernel_height = 1
-        num_channels = num_filters
-        num_filters = 64
-        W_conv2 = weight_variable([temporal_extent,
-                                   kernel_height,
-                                   kernel_width,
-                                   num_channels,
-                                   num_filters])
-        b_conv2 = bias_variable([num_filters])
-
-        # pre-activation node
-        conv2 = conv3d(h_pool1, W_conv2) + b_conv2
-        # pre-activation node (validation)
-        conv2_val = conv3d(h_pool1_val, W_conv2) + b_conv2
-
-        # channel-wise l1 normalization
-        conv2_l1norm = l1_normalize(conv2, 4)
-        # channel-wise l1 normalization (validation)
-        conv2_l1norm_val = l1_normalize(conv2_val, 4)
-
-        """flow-out (decode) layer"""
-        temporal_extent = 1
-        kernel_width = 1
-        kernel_height = 1
-        num_channels = num_filters
-        num_filters = 2
-        W_conv3 = weight_variable([temporal_extent,
-                                   kernel_height,
-                                   kernel_width,
-                                   num_channels,
-                                   num_filters])
-        b_conv3 = bias_variable([num_filters])
-
-        # flow-out pre-activation node
-        y = conv3d(conv2_l1norm, W_conv3) + b_conv3
-        # flow-out pre-activation node (validation)
-        y_val = conv3d(conv2_l1norm_val, W_conv3) + b_conv3
-
-        # reshape node
-        y = tf.reshape(y, [-1, target_shape[0],
-                           target_shape[1],
-                           target_shape[2]])
-        # reshape node (validation)
-        y_val = tf.reshape(y_val, [-1, target_shape[0],
-                                   target_shape[1],
-                                   target_shape[2]])
-
-        return y, y_val
+                    # merge summaries
+                    self.summaries = tf.merge_all_summaries()
 
 
-def build_net(batch_size, learning_rate, num_threads):
-    # attach data layer
-    num_channels = 1
-    temporal_extent = 5
-    input_shape = [temporal_extent, 256, 256, num_channels]
-    target_shape = [256, 256, 2]
-    x, y_, x_val, y_val_, dataset, queue_runner = data_layer(batch_size,
-                                                             num_threads,
-                                                             input_shape,
-                                                             target_shape)
-    # attach architecture
-    y, y_val = architecture(x, x_val, input_shape, target_shape)
-    # attach loss
-    loss = loss_layer(y, y_)
-    # attach loss (validation)
-    loss_val = loss_layer(y_val, y_val_)
-    # attach solver
-    solver = solver_layer(learning_rate, loss)
-    # attach summaries
-    summaries = summaries_layer(loss, loss_val, y_val, y_val_)
+    def run_train(self):
+        # for cleanliness
+        iterations = self.user_config['iterations']
+        base_lr = self.user_config['base_lr']
+        lr_gamma = self.user_config['lr_gamma']
+        lr_policy_start = self.user_config['lr_policy_start']
+        lr_stepsize = self.user_config['lr_stepsize']
+        snapshot_frequency = self.user_config['snapshot_frequency']
+        print_frequency = self.user_config['print_frequency']
 
-    return summaries, solver, loss, loss_val, queue_runner
+        with self.graph.as_default():
+            learning_rate = tf.placeholder(tf.float32, shape=[])
+
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
+                                               beta1=0.9, beta2=0.999,
+                                               epsilon=1e-08,
+                                               use_locking=False, name='Adam')
+
+            train_step = optimizer.minimize(self.loss)
+
+            """
+            Train over iterations, printing loss at each one
+            """
+            saver = tf.train.Saver(max_to_keep=0,
+                                   write_version=tf.train.SaverDef.V2)
+            with tf.Session(config=self.tf_config) as sess:
+
+                # check snapshots
+                resume, start_iteration = check_snapshots()
+
+                # start summary writer
+                summary_writer = tf.train.SummaryWriter('logs', sess.graph)
+
+                # start the tensorflow QueueRunners
+                tf.train.start_queue_runners(sess=sess)
+
+                # start the data queue runner's threads
+                threads = self.queue_runner.start_threads(sess)
+
+                if resume:
+                    saver.restore(sess, resume)
+                else:
+                    sess.run(tf.initialize_all_variables())
+
+                last_print = time.time()
+                for i in range(start_iteration, iterations):
+                    # learning rate step policy
+                    # initial lr update
+                    if (i + 1) == lr_policy_start:
+                        base_lr *= lr_gamma
+                    # subsequent lr updates
+                    if ((i + 1) - lr_policy_start) % lr_stepsize == 0 and \
+                        (i + 1) > lr_policy_start:
+                        base_lr *= lr_gamma
+
+                    # run a train step
+                    results = sess.run([train_step, self.loss,
+                                        self.summaries, learning_rate],
+                                        feed_dict={learning_rate: base_lr})
+
+                    # print training information
+                    if (i + 1) % print_frequency == 0:
+                        time_diff = time.time() - last_print
+                        it_per_sec = print_frequency / time_diff
+                        remaining_it = iterations - i
+                        eta = remaining_it / it_per_sec
+                        print 'Iteration %d: loss: %f lr: %f ' \
+                              'iter per/s: %f ETA: %s' \
+                              % (i + 1, results[1], results[3],
+                                 it_per_sec, str(datetime.timedelta(seconds=eta))) 
+                        summary_writer.add_summary(results[2], i + 1)
+                        summary_writer.flush()
+                        last_print = time.time()
+
+                    # save snapshot
+                    if (i + 1) % snapshot_frequency == 0:
+                        print 'Saving snapshot...'
+                        saver.save(sess, 'snapshots/iter_' +
+                           str(i + 1).zfill(16) + '.ckpt')
