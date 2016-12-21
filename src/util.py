@@ -118,37 +118,41 @@ def warp_flow(img, flow):
     return res
 
 
-def check_snapshots(root_folder=''):
+def check_snapshots(root_folder='', train=True):
     snapshots_folder = root_folder + 'snapshots/'
     logs_folder = root_folder + 'logs/'
 
     checkpoint = tf.train.latest_checkpoint(snapshots_folder)
 
-    resume = False
-    start_iteration = 0
+    if train:
+        resume = False
+        start_iteration = 0
 
-    if checkpoint:
-        choice = ''
-        while choice != 'y' and choice != 'n':
-            print 'Snapshot file detected (' + checkpoint + \
-                  ') would you like to resume? (y/n)'
-            choice = raw_input().lower()
+        if checkpoint:
+            choice = ''
+            while choice != 'y' and choice != 'n':
+                print 'Snapshot file detected (' + checkpoint + \
+                      ') would you like to resume? (y/n)'
+                choice = raw_input().lower()
 
-            if choice == 'y':
-                resume = checkpoint
-                start_iteration = int(checkpoint.split(snapshots_folder) \
-                                      [1][5:-5])
-                print 'resuming from iteration ' + str(start_iteration)
-            else:
-                print 'removing old snapshots and logs, training from scratch'
-                resume = False
-                for file in os.listdir(snapshots_folder):
-                    os.remove(snapshots_folder + file)
-                for file in os.listdir(logs_folder + 'train/'):
-                    os.remove(logs_folder + file)
-                for file in os.listdir(logs_folder + 'val/'):
-                    os.remove(logs_folder + file)
+                if choice == 'y':
+                    resume = checkpoint
+                    start_iteration = int(checkpoint.split(snapshots_folder)
+                                          [1][5:-5])
+                    print 'resuming from iteration ' + str(start_iteration)
+                else:
+                    print 'removing old snapshots and logs, training from' \
+                          ' scratch'
+                    resume = False
+                    for file in os.listdir(snapshots_folder):
+                        os.remove(snapshots_folder + file)
+                    for file in os.listdir(logs_folder + 'train/'):
+                        os.remove(logs_folder + 'train/' + file)
+                    for file in os.listdir(logs_folder + 'val/'):
+                        os.remove(logs_folder + 'val/' + file)
+        else:
+            print "No snapshots found, training from scratch"
+
+        return resume, start_iteration
     else:
-        print "No snapshots found, training from scratch"
-
-    return resume, start_iteration
+        return checkpoint

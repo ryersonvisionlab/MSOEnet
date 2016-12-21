@@ -5,7 +5,6 @@ import cv2
 import tensorflow as tf
 import threading
 from util import readFlowFile
-from scipy.ndimage import zoom
 
 
 class DataSet(object):
@@ -26,6 +25,7 @@ class DataSet(object):
     def training_data(self):
         return self._train
 
+    # TODO: get more validation data, currently only getting subset of frames
     def validation_data(self):
         # Pick all validation sequences
         indices = np.arange(len(self._validation))
@@ -34,30 +34,30 @@ class DataSet(object):
         # from each sequence
         packaged_data = []
         packaged_gts = []
-        count = 0
         for sequence in sequences:
-            if count == 10:
-                break
-            i = np.max(len(sequence['frames'])/2 - self._temporal_extent, 0)
-            chunk = sequence['frames'][i:i+self._temporal_extent]
-            # Read images in sequence and stack them into a single volume
-            prefix = sequence['prefix'] + '/'
-            scale_factor = 1.0 / 255.0
-            png_chunk = np.stack(tuple(np.expand_dims(
-                                       cv2.imread(prefix + frame[1],
-                                                  cv2.IMREAD_GRAYSCALE).
-                                       astype(np.float32) * scale_factor,
-                                       axis=5)
-                                       for frame in chunk))
-            # Pick flow for middle frame
-            gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
-            # Read flo file
-            gt_flo = readFlowFile(gt_flo)
-            # package the full image paths in each chunk as a data point
-            # and provide the ground truth flow for the middle frame
-            packaged_data.append(png_chunk)
-            packaged_gts.append(gt_flo)
-            count += 1
+            limit = 10
+            for i in range(len(sequence['frames']) -
+                           self._temporal_extent + 1):
+                if i == limit:
+                    break
+                chunk = sequence['frames'][i:i+self._temporal_extent]
+                # Read images in sequence and stack them into a single volume
+                prefix = sequence['prefix'] + '/'
+                scale_factor = 1.0 / 255.0
+                png_chunk = np.stack(tuple(np.expand_dims(
+                                           cv2.imread(prefix + frame[1],
+                                                      cv2.IMREAD_GRAYSCALE).
+                                           astype(np.float32) * scale_factor,
+                                           axis=5)
+                                           for frame in chunk))
+                # Pick flow for middle frame
+                gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
+                # Read flo file
+                gt_flo = readFlowFile(gt_flo)
+                # package the full image paths in each chunk as a data point
+                # and provide the ground truth flow for the middle frame
+                packaged_data.append(png_chunk)
+                packaged_gts.append(gt_flo)
 
         # wrap in numpy array (easier to work with)
         packaged_data = np.array(packaged_data)
@@ -98,7 +98,7 @@ class DataSet(object):
         packaged_gts = []
         for sequence in sequences:
             i = random.randint(0, len(sequence['frames']) -
-                               self._temporal_extent)
+                               self._temporal_extent + 1)
             chunk = sequence['frames'][i:i+self._temporal_extent]
             # Read images in sequence and stack them into a single volume
             prefix = sequence['prefix'] + '/'
@@ -124,7 +124,6 @@ class DataSet(object):
             # start next epoch
             self._index_in_epoch = batch_size
             assert batch_size <= self._num_examples
-
 
         # wrap in numpy array (easier to work with)
         packaged_data = np.array(packaged_data)

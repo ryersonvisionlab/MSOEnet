@@ -20,7 +20,7 @@ def data_layer(name, path, batch_size, temporal_extent, num_threads):
                                        batch_size, num_threads)
             x, y_ = queue_runner.get_inputs()
 
-        return x, y_, tf.pack(x_val), tf.pack(y_val_), queue_runner
+        return x, y_, x_val, y_val_, queue_runner
 
 
 def conv3d(name, input_layer, kernel_spatial_size,
@@ -38,14 +38,16 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                        out_channels],
                                       initializer=tf.truncated_normal_initializer(stddev=0.1))
             biases = tf.get_variable('biases',
-                                     [out_channels], 
-                                    initializer=tf.constant_initializer(0.0))
+                                     [out_channels],
+                                     initializer=tf.constant_initializer(0.0))
 
             # spatially pad the image, but not temporally
             input_layer = tf.pad(input_layer,
                                  [[0, 0], [0, 0],
-                                  [kernel_spatial_size/2, kernel_spatial_size/2],
-                                  [kernel_spatial_size/2, kernel_spatial_size/2],
+                                  [kernel_spatial_size / 2,
+                                   kernel_spatial_size / 2],
+                                  [kernel_spatial_size / 2,
+                                   kernel_spatial_size / 2],
                                   [0, 0]], 'CONSTANT')
 
             conv_output = tf.nn.conv3d(input_layer, weights,
@@ -129,7 +131,7 @@ def channel_concat3d(name, input_layer, axis=4):
 
 def flow_to_colour(name, flow):
     with tf.get_default_graph().name_scope(name):
-        #constants
+        # constants
         flow_shape = flow.get_shape()
 
         oor2 = 1 / math.sqrt(2)  # use tf math functions instead?
@@ -138,19 +140,22 @@ def flow_to_colour(name, flow):
                           perm=[0, 1, 3, 2])
         k120 = tf.transpose(tf.constant([[[[-oor2, oor2]]]], dtype=tf.float32),
                             perm=[0, 1, 3, 2])
-        k240 = tf.transpose(tf.constant([[[[-oor2, -oor2]]]], dtype=tf.float32),
+        k240 = tf.transpose(tf.constant([[[[-oor2, -oor2]]]],
+                            dtype=tf.float32),
                             perm=[0, 1, 3, 2])
-        k60 = tf.transpose(tf.constant([[[[sqrt3h, -1./2.]]]], dtype=tf.float32),
+        k60 = tf.transpose(tf.constant([[[[sqrt3h, -1./2.]]]],
+                           dtype=tf.float32),
                            perm=[0, 1, 3, 2])
         k180 = tf.transpose(tf.constant([[[[-1, 0]]]], dtype=tf.float32),
                             perm=[0, 1, 3, 2])
-        k300 = tf.transpose(tf.constant([[[[sqrt3h, 1./2.]]]], dtype=tf.float32),
+        k300 = tf.transpose(tf.constant([[[[sqrt3h, 1./2.]]]],
+                            dtype=tf.float32),
                             perm=[0, 1, 3, 2])
 
         k0c = tf.transpose(tf.constant([[[[1, 0, 0]]]], dtype=tf.float32),
                            perm=[0, 1, 3, 2])
         k120c = tf.transpose(tf.constant([[[[0, 1, 0]]]], dtype=tf.float32),
-                           perm=[0, 1, 3, 2])
+                             perm=[0, 1, 3, 2])
         k240c = tf.transpose(tf.constant([[[[0, 0, 1]]]], dtype=tf.float32),
                              perm=[0, 1, 3, 2])
         k60c = tf.transpose(tf.constant([[[[1, 1, 0]]]], dtype=tf.float32),
@@ -160,7 +165,7 @@ def flow_to_colour(name, flow):
         k300c = tf.transpose(tf.constant([[[[1, 0, 1]]]], dtype=tf.float32),
                              perm=[0, 1, 3, 2])
 
-        #find max flow and scale
+        # find max flow and scale
         flow = flow + 0.0000000001
         flow_sq = flow * flow
         flow_mag = tf.sqrt(tf.reduce_sum(flow_sq,
@@ -171,7 +176,7 @@ def flow_to_colour(name, flow):
                                 keep_dims=True)
         scaled_flow = flow / max_mag
 
-        #calculate coefficients
+        # calculate coefficients
         coef0 = tf.maximum(tf.nn.conv2d(scaled_flow, k0, [1, 1, 1, 1],
                                         padding='SAME'), 0) / 2
         coef120 = tf.maximum(tf.nn.conv2d(scaled_flow, k120, [1, 1, 1, 1],
@@ -185,7 +190,7 @@ def flow_to_colour(name, flow):
         coef300 = tf.maximum(tf.nn.conv2d(scaled_flow, k300, [1, 1, 1, 1],
                                           padding='SAME'), 0) / 2
 
-        #combine color components
+        # combine color components
         comp0 = tf.nn.conv2d_transpose(coef0, k0c,
                                        tf.pack([flow_shape[0],
                                                 flow_shape[1],
@@ -246,7 +251,7 @@ def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1):
         # pad X and Y
         x1 = tf.pad(kernel1, tf.constant([[pad, pad],
                                           [pad, pad],
-                                          [0, 0],[0,0]]), mode='CONSTANT')
+                                          [0, 0], [0, 0]]), mode='CONSTANT')
 
         # X and Y dimensions, w.r.t. padding
         Y = kernel1.get_shape()[0] + 2 * pad
@@ -257,12 +262,12 @@ def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1):
         # put NumKernels to the 1st dimension
         x2 = tf.transpose(x1, (3, 0, 1, 2))
         # organize grid on Y axis
-        x3 = tf.reshape(x2, tf.pack([grid_X, Y * grid_Y, X, channels])) #3
+        x3 = tf.reshape(x2, tf.pack([grid_X, Y * grid_Y, X, channels]))  # 3
 
         # switch X and Y axes
         x4 = tf.transpose(x3, (0, 2, 1, 3))
         # organize grid on X axis
-        x5 = tf.reshape(x4, tf.pack([1, X * grid_X, Y * grid_Y, channels])) #3
+        x5 = tf.reshape(x4, tf.pack([1, X * grid_X, Y * grid_Y, channels]))  # 3
 
         # back to normal order (not combining with the next step for clarity)
         x6 = tf.transpose(x5, (2, 1, 3, 0))
@@ -272,4 +277,4 @@ def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1):
         x7 = tf.transpose(x6, (3, 0, 1, 2))
 
         # scale to [0, 255] and convert to uint8
-        return tf.image.convert_image_dtype(x7, dtype=tf.uint8) 
+        return tf.image.convert_image_dtype(x7, dtype=tf.uint8)
