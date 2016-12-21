@@ -144,7 +144,9 @@ def check_snapshots(root_folder=''):
                 resume = False
                 for file in os.listdir(snapshots_folder):
                     os.remove(snapshots_folder + file)
-                for file in os.listdir(logs_folder):
+                for file in os.listdir(logs_folder + 'train/'):
+                    os.remove(logs_folder + file)
+                for file in os.listdir(logs_folder + 'val/'):
                     os.remove(logs_folder + file)
     else:
         print "No snapshots found, training from scratch"

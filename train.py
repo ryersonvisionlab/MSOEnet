@@ -14,12 +14,13 @@ my_config['temporal_extent'] = 2
 my_config['iterations'] = 200000
 my_config['snapshot_frequency'] = 500
 my_config['print_frequency'] = 1
+my_config['validation_frequency'] = 100
 my_config['base_lr'] = 3e-3
 my_config['lr_gamma'] = 1.0
 my_config['lr_stepsize'] = 300
 my_config['lr_policy_start'] = 0
 my_config['num_threads'] = 6
-my_config['num_scales'] = 3
+my_config['num_scales'] = 4
 
 with tf.device('/gpu:1'):
     net = MSOEPyramid(config={'tf': config_proto,

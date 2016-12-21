@@ -28,56 +28,14 @@ class MSOEPyramid(object):
                                                self.user_config['temporal_extent'],
                                                self.user_config['num_threads'])
 
-                # assuming square input
-                self.input_hw = [self.input_layer.get_shape().as_list()[2],
-                                 self.input_layer.get_shape().as_list()[3]]
-
                 """ Create pyramid """
-                # initial MSOE on original input size (batchxHxWx2)
-                initial = MSOE('MSOE_0', self.input_layer).output
-
-                # add new axis (batchx1xHxWx2)
-                initial = tf.expand_dims(initial, 1)
-
-                # initialize pyramid
-                msoe_array = [initial]
-                for scale in range(1, self.user_config['num_scales']):
-                    # big to small
-                    factor = 1.0 / (2**scale)
-                    small_input_h = int(self.input_hw[0] * factor)
-                    small_input_w = int(self.input_hw[1] * factor)
-
-                    # downsample data (batchx2xhxwx1)
-                    small_input = bilinear_resample_volume('downsample',
-                                                           self.input_layer,
-                                                           tf.pack([small_input_h,
-                                                                    small_input_w]))
-                    
-                    # create MSOE and insert data
-                    small_output = MSOE('MSOE_' + str(scale),
-                                        small_input, reuse=True).output
-
-                    # upsample flow output (batchx1xHxWx64)
-                    output_layer = bilinear_resample_volume('upsample',
-                                                            small_output,
-                                                            tf.pack(self.input_hw))
-
-                    msoe_array.append(output_layer)
-                
-                # channel concatenate outputs (batchx1xHxWx64*num_scales)
-                concatenated = tf.concat(4, msoe_array)
-
-                # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
-                self.output = conv3d('conv4', concatenated, 1, 1, 2)
-
-                # reshape (batch x H x W x 2)
-                output_shape = self.output.get_shape().as_list()
-                self.output = reshape('reshape', self.output,
-                                      [-1, output_shape[2],
-                                       output_shape[3], 2])
+                self.output = self.build_pyramid('train', self.input_layer)
+                self.val_output = self.build_pyramid('val', self.val_input_layer,
+                                                     reuse=True)
 
                 # attach loss
                 self.loss = l1_loss('l1_loss', self.output, self.target)
+                self.val_loss = l1_loss('l1_loss_val', self.val_output, self.val_target)
 
                 # attach summaries
                 with tf.name_scope('summaries'):
@@ -87,6 +45,8 @@ class MSOEPyramid(object):
 
                     # graph loss
                     tf.scalar_summary('loss', self.loss)
+                    tf.scalar_summary('val_loss', self.val_loss,
+                                      collections='val')
 
                     # visualize target and predicted flows
                     tf.image_summary('flow predicted',
@@ -113,6 +73,53 @@ class MSOEPyramid(object):
 
                     # merge summaries
                     self.summaries = tf.merge_all_summaries()
+                    self.val_summaries = tf.merge_all_summaries(key='val')
+
+
+    def build_pyramid(self, name, input_layer, reuse=None):
+        with tf.get_default_graph().name_scope(name):
+            # assuming square input
+            input_hw = [input_layer.get_shape().as_list()[2],
+                        input_layer.get_shape().as_list()[3]]
+
+            # initial MSOE on original input size (batchxHxWx2)
+            initial = MSOE('MSOE_0', input_layer, reuse).output
+
+            # initialize pyramid
+            msoe_array = [initial]
+            for scale in range(1, self.user_config['num_scales']):
+                # big to small
+                spatial_stride = 2**scale
+
+                # downsample data (batchx2xhxwx1)
+                small_input = avg_pool3d('downsample',
+                                         input_layer, 3, 1,
+                                         spatial_stride)
+                
+                # create MSOE and insert data
+                small_output = MSOE('MSOE_' + str(scale),
+                                    small_input, reuse=True).output
+
+                # upsample flow output (batchx1xHxWx64)
+                output_layer = bilinear_resample3d('upsample',
+                                                   small_output,
+                                                   tf.pack(input_hw))
+
+                msoe_array.append(output_layer)
+            
+            # channel concatenate outputs (batchx1xHxWx64*num_scales)
+            concatenated = channel_concat3d('concat', msoe_array)
+
+            # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
+            output = conv3d('conv4', concatenated, 1, 1, 2, reuse)
+
+            # reshape (batch x H x W x 2)
+            output_shape = output.get_shape().as_list()
+            output = reshape('reshape', output,
+                             [-1, output_shape[2],
+                              output_shape[3], 2])
+
+            return output
 
 
     def run_train(self):
@@ -124,6 +131,7 @@ class MSOEPyramid(object):
         lr_stepsize = self.user_config['lr_stepsize']
         snapshot_frequency = self.user_config['snapshot_frequency']
         print_frequency = self.user_config['print_frequency']
+        validation_frequency = self.user_config['validation_frequency']
 
         with self.graph.as_default():
             learning_rate = tf.placeholder(tf.float32, shape=[])
@@ -146,7 +154,8 @@ class MSOEPyramid(object):
                 resume, start_iteration = check_snapshots()
 
                 # start summary writer
-                summary_writer = tf.train.SummaryWriter('logs', sess.graph)
+                summary_writer = tf.train.SummaryWriter('logs/train', sess.graph)
+                summary_writer_val = tf.train.SummaryWriter('logs/val')
 
                 # start the tensorflow QueueRunners
                 tf.train.start_queue_runners(sess=sess)
@@ -188,6 +197,14 @@ class MSOEPyramid(object):
                         summary_writer.add_summary(results[2], i + 1)
                         summary_writer.flush()
                         last_print = time.time()
+
+                    # print validation information
+                    if (i + 1) % validation_frequency == 0:
+                        val_results = sess.run([self.val_loss,
+                                                self.val_summaries])
+                        print 'Validation loss: %f' % (val_results[0])
+                        summary_writer_val.add_summary(val_results[1], i + 1)
+                        summary_writer_val.flush()
 
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:

@@ -36,7 +36,7 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                        kernel_spatial_size,
                                        in_channels,
                                        out_channels],
-                                      initializer=tf.truncated_normal_initializer())
+                                      initializer=tf.truncated_normal_initializer(stddev=0.1))
             biases = tf.get_variable('biases',
                                      [out_channels], 
                                     initializer=tf.constant_initializer(0.0))
@@ -55,13 +55,16 @@ def conv3d(name, input_layer, kernel_spatial_size,
         return tf.nn.bias_add(conv_output, biases)
 
 
-def avg_pool3d(name, input_layer, kernel_spatial_size, kernel_temporal_size):
+def avg_pool3d(name, input_layer, kernel_spatial_size,
+               kernel_temporal_size, spatial_stride=1):
     with tf.get_default_graph().name_scope(name):
         return tf.nn.avg_pool3d(input_layer,
                                 ksize=[1, kernel_temporal_size,
                                        kernel_spatial_size,
                                        kernel_spatial_size, 1],
-                                strides=[1, 1, 1, 1, 1], padding='SAME')
+                                strides=[1, 1, spatial_stride,
+                                         spatial_stride, 1],
+                                padding='SAME')
 
 
 def eltwise_square(name, input_layer):
@@ -96,7 +99,7 @@ def area_resample(name, input_layer, output_shape):
         return tf.image.resize_area(input_layer, output_shape)
 
 
-def area_resample_volume(name, input_layer, output_shape, axis=1):
+def area_resample3d(name, input_layer, output_shape, axis=1):
     with tf.get_default_graph().name_scope(name):
         unpacked = tf.unpack(input_layer, axis=axis)
         for i in range(len(unpacked)):
@@ -110,13 +113,18 @@ def bilinear_resample(name, input_layer, output_shape):
         return tf.image.resize_bilinear(input_layer, output_shape)
 
 
-def bilinear_resample_volume(name, input_layer, output_shape, axis=1):
+def bilinear_resample3d(name, input_layer, output_shape, axis=1):
     with tf.get_default_graph().name_scope(name):
         unpacked = tf.unpack(input_layer, axis=axis)
         for i in range(len(unpacked)):
             unpacked[i] = bilinear_resample('bilinear_resample', unpacked[i],
                                             output_shape)
         return tf.pack(unpacked, axis=axis)
+
+
+def channel_concat3d(name, input_layer, axis=4):
+    with tf.get_default_graph().name_scope(name):
+        return tf.concat(axis, input_layer)
 
 
 def flow_to_colour(name, flow):
