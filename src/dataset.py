@@ -53,6 +53,7 @@ class DataSet(object):
                 gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
                 # Read flo file
                 gt_flo = readFlowFile(gt_flo)
+                gt_flo[:, :, 1] *= -1  # fy is in opposite direction, must flip
                 # package chunks of images as data points
                 # and provide the ground truth flow for the middle frame
                 packaged_data.append(png_chunk)
@@ -112,6 +113,7 @@ class DataSet(object):
             gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
             # Read flo file
             gt_flo = readFlowFile(gt_flo)
+            gt_flo[:, :, 1] *= -1  # fy is in opposite direction, must flip
             # package chunks of images as data points
             # and provide the ground truth flow for the middle frame
             packaged_data.append(png_chunk)
@@ -128,7 +130,28 @@ class DataSet(object):
         packaged_data = np.array(packaged_data)
         packaged_gts = np.array(packaged_gts)
 
-        return packaged_data, packaged_gts
+        return augment(packaged_data, packaged_gts)
+
+
+def discrete_rotate(input, k, flow=False):
+    if flow:
+        rad = k * (np.pi / 2.0)
+        fx, fy = np.copy(input[:, :, 0]), np.copy(input[:, :, 1])
+        sin = np.sin(rad)
+        cos = np.cos(rad)
+        input[..., 0] = (fx * cos) - (fy * sin)
+        input[..., 1] = (fx * sin) + (fy * cos)
+    return np.rot90(input, k)
+
+
+def augment(dataX, dataY):
+    for i in range(dataX.shape[0]):
+        k = np.random.randint(0, 4)
+        if k > 0:
+            for j in range(dataX.shape[1]):
+                dataX[i][j] = discrete_rotate(dataX[i][j], k)
+            dataY[i] = discrete_rotate(dataY[i], k, flow=True)
+    return dataX, dataY
 
 
 def read_data_sets(train_dir,
