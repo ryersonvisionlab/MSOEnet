@@ -144,9 +144,10 @@ def discrete_rotate(input, k, flow=False):
     return np.rot90(input, k)
 
 
-def augment(dataX, dataY):
+def augment(dataX, dataY, k=None):
     for i in range(dataX.shape[0]):
-        k = np.random.randint(0, 4)
+        if k is None:
+            k = np.random.randint(0, 4)
         if k > 0:
             for j in range(dataX.shape[1]):
                 dataX[i][j] = discrete_rotate(dataX[i][j], k)
