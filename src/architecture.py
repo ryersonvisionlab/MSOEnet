@@ -166,7 +166,6 @@ class MSOEPyramid(object):
 
     def run_train(self):
         # for cleanliness
-        batch_size = self.user_config['batch_size']
         iterations = self.user_config['iterations']
         base_lr = self.user_config['base_lr']
         lr_gamma = self.user_config['lr_gamma']
@@ -196,7 +195,7 @@ class MSOEPyramid(object):
                 # check snapshots
                 resume, start_iteration = check_snapshots()
 
-                # start summary writer
+                # start summary writers
                 summary_writer = tf.train.SummaryWriter('logs/train',
                                                         sess.graph)
                 summary_writer_val = tf.train.SummaryWriter('logs/val')
@@ -261,6 +260,7 @@ class MSOEPyramid(object):
                                    str(i + 1).zfill(16) + '.ckpt')
 
     def validate_chunks(self, sess):
+        batch_size = self.user_config['batch_size']
         total_val_loss = []
         num_val = self.val_input_layer.shape[0]
         num_chunks = num_val / batch_size

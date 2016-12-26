@@ -26,5 +26,5 @@ class MSOE(object):
                 conv2 = conv3d('conv2', pool1, 1, 1, 64, reuse)
                 # channel-wise l1 normalization (batchx1xHxWx64)
                 l1_norm = l1_normalize('l1_norm', conv2)
-                
+
                 self.output = l1_norm

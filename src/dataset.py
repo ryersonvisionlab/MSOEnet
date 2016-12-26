@@ -25,13 +25,12 @@ class DataSet(object):
     def training_data(self):
         return self._train
 
-    # TODO: get more validation data, currently only getting subset of frames
     def validation_data(self):
         # Pick all validation sequences
         indices = np.arange(len(self._validation))
         sequences = [self._validation[i] for i in indices]
-        # Pick the middle consecutive chunk (length temporal_extent) of frames
-        # from each sequence
+        # Pick limit chunks (of length temporal_extent) of frames
+        # from each sequence (1000 data points)
         packaged_data = []
         packaged_gts = []
         for sequence in sequences:
@@ -44,17 +43,17 @@ class DataSet(object):
                 # Read images in sequence and stack them into a single volume
                 prefix = sequence['prefix'] + '/'
                 scale_factor = 1.0 / 255.0
-                png_chunk = np.stack(tuple(np.expand_dims(
-                                           cv2.imread(prefix + frame[1],
-                                                      cv2.IMREAD_GRAYSCALE).
-                                           astype(np.float32) * scale_factor,
-                                           axis=5)
-                                           for frame in chunk))
+                png_chunk = np.expand_dims(
+                                np.stack([cv2.imread(
+                                          prefix + frame[1],
+                                          cv2.IMREAD_GRAYSCALE).
+                                          astype(np.float32) * scale_factor
+                                          for frame in chunk]), axis=3)
                 # Pick flow for middle frame
                 gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
                 # Read flo file
                 gt_flo = readFlowFile(gt_flo)
-                # package the full image paths in each chunk as a data point
+                # package chunks of images as data points
                 # and provide the ground truth flow for the middle frame
                 packaged_data.append(png_chunk)
                 packaged_gts.append(gt_flo)
@@ -98,22 +97,22 @@ class DataSet(object):
         packaged_gts = []
         for sequence in sequences:
             i = random.randint(0, len(sequence['frames']) -
-                               self._temporal_extent + 1)
+                               self._temporal_extent)
             chunk = sequence['frames'][i:i+self._temporal_extent]
             # Read images in sequence and stack them into a single volume
             prefix = sequence['prefix'] + '/'
             scale_factor = 1.0 / 255.0
-            png_chunk = np.stack(tuple(np.expand_dims(
-                                       cv2.imread(prefix + frame[1],
-                                                  cv2.IMREAD_GRAYSCALE).
-                                       astype(np.float32) * scale_factor,
-                                       axis=5)
-                                       for frame in chunk))
+            png_chunk = np.expand_dims(
+                            np.stack([cv2.imread(
+                                      prefix + frame[1],
+                                      cv2.IMREAD_GRAYSCALE).
+                                      astype(np.float32) * scale_factor
+                                      for frame in chunk]), axis=3)
             # pick flow for middle frame
             gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
             # Read flo file
             gt_flo = readFlowFile(gt_flo)
-            # package the full image paths in each chunk as a data point
+            # package chunks of images as data points
             # and provide the ground truth flow for the middle frame
             packaged_data.append(png_chunk)
             packaged_gts.append(gt_flo)
@@ -144,7 +143,7 @@ def read_data_sets(train_dir,
     train_count = 0
     validation_count = 0
 
-    print 'Reading dataset...'
+    print 'Creating dataset filename structure...'
     for group in get_immediate_subdirectories(train_dir):
         i = 0
         for sequence_path in get_immediate_subdirectories(group):
