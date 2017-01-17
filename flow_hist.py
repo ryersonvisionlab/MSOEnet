@@ -9,11 +9,9 @@ from src.dataset import read_data_sets
 import cv2
 import time
 import itertools
-import operator
-import gc
 
 
-def draw_hist(flow_dirs, i):
+def draw_hist(flow_dirs):
     N = 50
 
     ax = plt.subplot(111, polar=True)
@@ -25,8 +23,9 @@ def draw_hist(flow_dirs, i):
     cm = plt.cm.get_cmap('hsv')
     for b, p in zip(bins, patches):
         plt.setp(p, 'facecolor', cm(b / (2*np.pi)))
+        plt.setp(p, linewidth=0)
 
-    plt.savefig('pics/hist' + str(i) + '.png', bbox_inches='tight')
+    plt.savefig('hist_aug.png', bbox_inches='tight')
     plt.close()
 
 
@@ -36,39 +35,22 @@ def adjust_y_axis(mydata):
 
 def main(argv=None):
     flow_dirs = []
-    data = read_data_sets('/home/mtesfald/UCF-101-gt/', 2)
-    sequences = data._validation
-    count = 0
-    hist_count = 1
-    for sequence in sequences:
-        limit = 10
-        prefix = sequence['prefix'] + '/'
-        fc = 0
-        for frame in sequence['frames']:
-            if fc == limit:
-                break
-            gt_flo = readFlowFile(prefix + frame[0])
-            fx, fy = gt_flo[:, :, 0], gt_flo[:, :, 1] * -1
-            v, ang = cv2.cartToPolar(fx, fy)
-            ang = ang[np.where(v > 0.1)]
-            print str(count) + ': frame' + str(fc)
-            tic = time.time()
-            flow_dirs.append(np.ravel(ang).tolist())
-            toc = time.time()
-            print str(count) + ': append' + str(fc) + ' time: ' + str(toc - tic)
-            fc += 1
-        count += 1
-        # if count % 10 == 0:
-        #     print 'count: ' + str(count)
-        #     flow_dirs = list(itertools.chain.from_iterable(flow_dirs))
-        #     print 'number of flows: ' + str(len(flow_dirs))
-        #     draw_hist(flow_dirs, hist_count)
-        #     hist_count += 1
-        #     del flow_dirs
-        #     gc.collect()
-        #     flow_dirs = []
+    dataset = read_data_sets('/home/mtesfald/UCF-101-gt/', 2)
+    data, gt = dataset.validation_data()
+
+    pair_count = 1
+    for flow in gt:
+        fx, fy = flow[:, :, 0], flow[:, :, 1]
+        v, ang = cv2.cartToPolar(fx, fy)
+        ang = ang[np.where(v > 0.1)]
+        tic = time.time()
+        flow_dirs.append(np.ravel(ang).tolist())
+        toc = time.time()
+        print 'frame ' + str(pair_count) + ' time: ' + str(toc - tic)
+        pair_count += 1
+
     flow_dirs = list(itertools.chain.from_iterable(flow_dirs))
-    draw_hist(flow_dirs, 1)
+    draw_hist(flow_dirs)
 
 
 if __name__ == "__main__":

@@ -63,6 +63,13 @@ class DataSet(object):
         packaged_data = np.array(packaged_data)
         packaged_gts = np.array(packaged_gts)
 
+        # selectively augment the data (this was kind of handpicked)
+        for i in range(10):
+            start = i * 90
+            end = start + 90
+            k = i % 4
+            augment(packaged_data[start:end], packaged_gts[start:end], k=k)
+
         return packaged_data, packaged_gts
 
     @property
@@ -144,14 +151,22 @@ def discrete_rotate(input, k, flow=False):
     return np.rot90(input, k)
 
 
+# TODO: clean out the code duplication, ew
+# TODO: I'm not copying data here, so it's probably best not to return anything
 def augment(dataX, dataY, k=None):
-    for i in range(dataX.shape[0]):
-        if k is None:
+    if k is None:
+        for i in range(dataX.shape[0]):
             k = np.random.randint(0, 4)
-        if k > 0:
-            for j in range(dataX.shape[1]):
-                dataX[i][j] = discrete_rotate(dataX[i][j], k)
-            dataY[i] = discrete_rotate(dataY[i], k, flow=True)
+            if k > 0:
+                for j in range(dataX.shape[1]):
+                    dataX[i][j] = discrete_rotate(dataX[i][j], k)
+                dataY[i] = discrete_rotate(dataY[i], k, flow=True)
+    else:
+        for i in range(dataX.shape[0]):
+            if k > 0:
+                for j in range(dataX.shape[1]):
+                    dataX[i][j] = discrete_rotate(dataX[i][j], k)
+                dataY[i] = discrete_rotate(dataY[i], k, flow=True)
     return dataX, dataY
 
 

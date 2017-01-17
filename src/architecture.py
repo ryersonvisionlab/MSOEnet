@@ -59,7 +59,7 @@ class MSOEPyramid(object):
                 else:
                     """ feed-forward-only """
                     # user-given input
-                    self.input_layer = input
+                    self.input_layer = tf.pack(input)
 
                     """ Create pyramid """
                     self.output = self.build_pyramid('MSOE_Pyramid',
@@ -283,14 +283,15 @@ class MSOEPyramid(object):
 
         return avg_val_loss, val_summary
 
-    def run_test(self, model_path):
-        # TODO: switch to tf.train.import_meta_graph
-        saver = tf.train.Saver(max_to_keep=0,
-                               write_version=tf.train.SaverDef.V2)
-        with tf.Session(config=self.tf_config) as sess:
-            # load model
-            model = check_snapshots(train=False)
-            saver.restore(sess, model)
+    def run_test(self):
+        with self.graph.as_default():
+            # TODO: switch to tf.train.import_meta_graph
+            saver = tf.train.Saver(max_to_keep=0,
+                                   write_version=tf.train.SaverDef.V2)
+            with tf.Session(config=self.tf_config) as sess:
+                # load model
+                model = check_snapshots(train=False)
+                saver.restore(sess, model)
 
-            result = sess.run([self.output])[0]
-            return result
+                result = sess.run([self.output])[0]
+                return result
