@@ -59,10 +59,12 @@ class MSOEPyramid(object):
                 else:
                     """ feed-forward-only """
                     # user-given input
-                    self.input_layer = tf.pack(input)
+                    self.input_layer = tf.placeholder(tf.float32,
+                                                      [None, 2, 256, 256, 1],
+                                                      name='images')
 
                     """ Create pyramid """
-                    self.output = self.build_pyramid('MSOE_Pyramid',
+                    self.output = self.build_pyramid('MSOEnet',
                                                      self.input_layer)
 
     def build_validation_placeholders(self):
@@ -121,10 +123,6 @@ class MSOEPyramid(object):
 
     def build_pyramid(self, name, input_layer, reuse=None):
         with tf.get_default_graph().name_scope(name):
-            # assuming square input
-            input_hw = [input_layer.get_shape().as_list()[2],
-                        input_layer.get_shape().as_list()[3]]
-
             # initial MSOE on original input size (batchxHxWx2)
             initial = MSOE('MSOE_0', input_layer, reuse).output
 
@@ -146,7 +144,7 @@ class MSOEPyramid(object):
                 # upsample flow output (batchx1xHxWx64)
                 output_layer = bilinear_resample3d('upsample',
                                                    small_output,
-                                                   tf.pack(input_hw))
+                                                   tf.shape(input_layer)[2:4])
 
                 msoe_array.append(output_layer)
 
@@ -157,10 +155,9 @@ class MSOEPyramid(object):
             output = conv3d('conv4', concatenated, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
-            output_shape = output.get_shape().as_list()
             output = reshape('reshape', output,
-                             [-1, output_shape[2],
-                              output_shape[3], 2])
+                             [-1, tf.shape(output)[2],
+                              tf.shape(output)[3], 2])
 
             return output
 
@@ -292,6 +289,9 @@ class MSOEPyramid(object):
                 # load model
                 model = check_snapshots(train=False)
                 saver.restore(sess, model)
+                saver.save(sess, 'backup_snapshots/iter_0000000000600000.ckpt')
+                for op in self.graph.get_operations():
+                    print op.name
 
-                result = sess.run([self.output])[0]
-                return result
+                # result = sess.run([self.output])[0]
+                # return result
