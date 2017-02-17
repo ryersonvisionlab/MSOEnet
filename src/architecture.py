@@ -16,7 +16,6 @@ class MSOEPyramid(object):
 
         self.graph = tf.Graph()
         with self.graph.as_default():
-            # TODO: verify if gpu 1 being used and if this is redundant
             with tf.device('/gpu:1'):
                 """
                 Construct the MSOE pyramid graph structure
@@ -59,9 +58,12 @@ class MSOEPyramid(object):
                 else:
                     """ feed-forward-only """
                     # user-given input
-                    self.input_layer = tf.placeholder(tf.float32,
-                                                      [None, 2, 256, 256, 1],
-                                                      name='images')
+                    if input is None:
+                        self.input_layer = tf.placeholder(tf.float32,
+                                                          [None, 2, 256, 256,
+                                                           1], name='images')
+                    else:
+                        self.input_layer = tf.pack(input)
 
                     """ Create pyramid """
                     self.output = self.build_pyramid('MSOEnet',
@@ -287,11 +289,20 @@ class MSOEPyramid(object):
                                    write_version=tf.train.SaverDef.V2)
             with tf.Session(config=self.tf_config) as sess:
                 # load model
+                model = check_snapshots(folder='final_model', train=False)
+                saver.restore(sess, model)
+
+                result = sess.run([self.output])[0]
+                return result
+
+    def save_model(self):
+        with self.graph.as_default():
+            saver = tf.train.Saver(max_to_keep=0,
+                                   write_version=tf.train.SaverDef.V2)
+            with tf.Session(config=self.tf_config) as sess:
+                # load model
                 model = check_snapshots(train=False)
                 saver.restore(sess, model)
-                saver.save(sess, 'backup_snapshots/iter_0000000000600000.ckpt')
+                saver.save(sess, 'final_model/MSOEnet.ckpt')
                 for op in self.graph.get_operations():
                     print op.name
-
-                # result = sess.run([self.output])[0]
-                # return result

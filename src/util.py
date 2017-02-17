@@ -137,9 +137,9 @@ def draw_hsv_ocv(flow):
     return tf.cast(rgb, tf.uint8)
 
 
-def check_snapshots(root_folder='', train=True):
-    snapshots_folder = root_folder + 'snapshots/'
-    logs_folder = root_folder + 'logs/'
+def check_snapshots(folder='snapshots/', train=True):
+    snapshots_folder = folder
+    logs_folder = 'logs/'
 
     checkpoint = tf.train.latest_checkpoint(snapshots_folder)
 

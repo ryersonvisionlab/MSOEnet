@@ -48,7 +48,7 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                    kernel_spatial_size / 2],
                                   [kernel_spatial_size / 2,
                                    kernel_spatial_size / 2],
-                                  [0, 0]], 'CONSTANT')
+                                  [0, 0]], 'SYMMETRIC')
 
             conv_output = tf.nn.conv3d(input_layer, weights,
                                        strides=[1, 1, 1, 1, 1],
