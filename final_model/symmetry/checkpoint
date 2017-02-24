@@ -1,0 +1,2 @@
+model_checkpoint_path: "MSOEnet.ckpt"
+all_model_checkpoint_paths: "MSOEnet.ckpt"
