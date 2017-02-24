@@ -18,10 +18,10 @@ with tf.device('/gpu:1'):
     scale_factor = 1.0 / 255.0
 
     for i in range(1, 40):
-        input1 = cv2.imread('test_images/water_2/iter_2000_frame_%d_1.jpeg' % (i),
+        input1 = cv2.imread('test_images/oatmeal_8/frame_%08d.jpeg' % (i),
                             cv2.IMREAD_GRAYSCALE).astype(np.float32) * \
             scale_factor
-        input2 = cv2.imread('test_images/water_2/iter_2000_frame_%d_1.jpeg' % (i+1),
+        input2 = cv2.imread('test_images/oatmeal_8/frame_%08d.jpeg' % (i+1),
                             cv2.IMREAD_GRAYSCALE).astype(np.float32) * \
             scale_factor
         stacked = np.expand_dims(
@@ -39,10 +39,10 @@ with tf.device('/gpu:1'):
     result = net.run_test()
 
     for i in range(0, 39):
-        cv2.imwrite('test_images/water_2/img_' + str(i) + '.jpeg',
-                    draw_hsv(result[i]))
+        filename = 'test_images/oatmeal_8/img_%08d.jpeg' % (i)
+        cv2.imwrite(filename, draw_hsv(result[i]))
 
     call('convert -delay 10 -loop 0 -alpha set -dispose previous '
-         '`ls -v test_images/water_2/img_*.jpeg` '
-         'test_images/water_2/img.gif',
+         '`ls -v test_images/oatmeal_8/img_*.jpeg` '
+         'test_images/oatmeal_8/img.gif',
          shell=True)
