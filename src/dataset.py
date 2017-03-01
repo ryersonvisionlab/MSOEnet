@@ -1,10 +1,10 @@
 import os
 import random
 import numpy as np
-import cv2
 import tensorflow as tf
 import threading
-from util import readFlowFile
+from util import readFlowFile, load_image
+from augmentation import *
 
 
 class DataSet(object):
@@ -12,9 +12,8 @@ class DataSet(object):
     def __init__(self, train, validation, temporal_extent):
         count = 0
         for sequence in train:
-            count += len(sequence['frames'])
-        # inevitable rounding
-        self._num_examples = count / temporal_extent
+            count += len(sequence['flows'])
+        self._num_examples = count
         self._train = train
         self._validation = validation
         self._temporal_extent = temporal_extent
@@ -29,46 +28,41 @@ class DataSet(object):
         # Pick all validation sequences
         indices = np.arange(len(self._validation))
         sequences = [self._validation[i] for i in indices]
-        # Pick limit chunks (of length temporal_extent) of frames
-        # from each sequence (1000 data points)
+
         packaged_data = []
         packaged_gts = []
         for sequence in sequences:
-            limit = 10
-            for i in range(len(sequence['frames']) -
+            limit = 2**31 - 1
+            for i in range(len(sequence['images']) -
                            self._temporal_extent + 1):
+
                 if i == limit:
                     break
-                chunk = sequence['frames'][i:i+self._temporal_extent]
-                # Read images in sequence and stack them into a single volume
+
+                img_names = sequence['images'][i:i+self._temporal_extent]
+                flo_names = sequence['flows'][i:i+self._temporal_extent-1]
                 prefix = sequence['prefix'] + '/'
-                scale_factor = 1.0 / 255.0
-                png_chunk = np.expand_dims(
-                                np.stack([cv2.imread(
-                                          prefix + frame[1],
-                                          cv2.IMREAD_GRAYSCALE).
-                                          astype(np.float32) * scale_factor
-                                          for frame in chunk]), axis=3)
-                # Pick flow for middle frame
-                gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
+
+                # Read images in sequence and stack them into a single volume
+                images = np.stack([load_image(prefix + name)
+                                   for name in img_names])
+
+                # pick flow for middle frame
+                gt_flo = prefix + flo_names[int(np.ceil(len(img_names)/2.0) -
+                                            1)]
+
                 # Read flo file
                 gt_flo = readFlowFile(gt_flo)
                 gt_flo[:, :, 1] *= -1  # fy is in opposite direction, must flip
-                # package chunks of images as data points
-                # and provide the ground truth flow for the middle frame
-                packaged_data.append(png_chunk)
+
+                # package images as data points and provide the ground
+                # truth flow for the middle frame
+                packaged_data.append(images)
                 packaged_gts.append(gt_flo)
 
         # wrap in numpy array (easier to work with)
         packaged_data = np.array(packaged_data)
         packaged_gts = np.array(packaged_gts)
-
-        # selectively augment the data (this was kind of handpicked)
-        for i in range(10):
-            start = i * 90
-            end = start + 90
-            k = i % 4
-            augment(packaged_data[start:end], packaged_gts[start:end], k=k)
 
         return packaged_data, packaged_gts
 
@@ -85,46 +79,37 @@ class DataSet(object):
         return self._epochs_completed
 
     def next_batch(self, batch_size):
-        """
-        1. Pick batch_size amount of sequences at random.
-        2. For each sequence, pick a random consecutive chunk of frames of
-        length temporal_extent.
-        3. Package the (full) image paths in each chunk as a data point,
-        e.g. [path1, path2, path3, path4], [path1, path2, path3, path4], ...
-        4. For each data point, provide the ground truth flow for the middle
-        frame.
-        5. Resolve all paths to their files.
-        5. Return the batch of data points and labels.
-        """
         # Pick a random batch of sequences
         indices = np.random.choice(len(self._train), batch_size)
         sequences = [self._train[i] for i in indices]
-        # Pick one consecutive chunk (length temporal_extent) of frames from
-        # each sequence at random
+
         packaged_data = []
         packaged_gts = []
         for sequence in sequences:
-            i = random.randint(0, len(sequence['frames']) -
+            # Pick one consecutive chunk (length temporal_extent) of image
+            # names and corresponding flo names from each sequence at random
+            i = random.randint(0, len(sequence['images']) -
                                self._temporal_extent)
-            chunk = sequence['frames'][i:i+self._temporal_extent]
-            # Read images in sequence and stack them into a single volume
+            img_names = sequence['images'][i:i+self._temporal_extent]
+            flo_names = sequence['flows'][i:i+self._temporal_extent-1]
             prefix = sequence['prefix'] + '/'
-            scale_factor = 1.0 / 255.0
-            png_chunk = np.expand_dims(
-                            np.stack([cv2.imread(
-                                      prefix + frame[1],
-                                      cv2.IMREAD_GRAYSCALE).
-                                      astype(np.float32) * scale_factor
-                                      for frame in chunk]), axis=3)
+
+            # Read images in sequence and stack them into a single volume
+            images = np.stack([load_image(prefix + name)
+                               for name in img_names])
+
             # pick flow for middle frame
-            gt_flo = prefix + chunk[int(np.ceil(len(chunk)/2.0) - 1)][0]
+            gt_flo = prefix + flo_names[int(np.ceil(len(img_names)/2.0) - 1)]
+
             # Read flo file
             gt_flo = readFlowFile(gt_flo)
             gt_flo[:, :, 1] *= -1  # fy is in opposite direction, must flip
-            # package chunks of images as data points
-            # and provide the ground truth flow for the middle frame
-            packaged_data.append(png_chunk)
+
+            # package images as data points and provide the ground
+            # truth flow for the middle frame
+            packaged_data.append(images)
             packaged_gts.append(gt_flo)
+
         # update epoch count
         self._index_in_epoch += batch_size
         if self._index_in_epoch > self._num_examples:
@@ -137,41 +122,44 @@ class DataSet(object):
         packaged_data = np.array(packaged_data)
         packaged_gts = np.array(packaged_gts)
 
-        return augment(packaged_data, packaged_gts)
-
-
-def discrete_rotate(input, k, flow=False):
-    if flow:
-        rad = k * (np.pi / 2.0)
-        fx, fy = np.copy(input[:, :, 0]), np.copy(input[:, :, 1])
-        sin = np.sin(rad)
-        cos = np.cos(rad)
-        input[..., 0] = (fx * cos) - (fy * sin)
-        input[..., 1] = (fx * sin) + (fy * cos)
-    return np.rot90(input, k)
+        return packaged_data, packaged_gts
 
 
 # TODO: clean out the code duplication, ew
 # TODO: I'm not copying data here, so it's probably best not to return anything
-def augment(dataX, dataY, k=None):
-    if k is None:
-        for i in range(dataX.shape[0]):
-            k = np.random.randint(0, 4)
-            if k > 0:
-                for j in range(dataX.shape[1]):
-                    dataX[i][j] = discrete_rotate(dataX[i][j], k)
-                dataY[i] = discrete_rotate(dataY[i], k, flow=True)
-    else:
-        for i in range(dataX.shape[0]):
-            if k > 0:
-                for j in range(dataX.shape[1]):
-                    dataX[i][j] = discrete_rotate(dataX[i][j], k)
-                dataY[i] = discrete_rotate(dataY[i], k, flow=True)
+# TODO: rewrite
+def augment(dataX, dataY, batchSize):
+    frame0 = dataX[:, 0]
+    frame1 = dataX[:, 1]
+    flow = dataY
+
+    # geo augmentation
+    globalAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, True)
+    localAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, False)
+    globalLocalAffine = tf.batch_matmul(localAffine, globalAffine)
+    frame0Geo = geoAug(frame0, globalAffine)
+    frame1Geo = geoAug(frame1, globalLocalAffine)
+
+    # augment flow
+    flowGeo = geoAugFlow(flow, globalAffine, globalLocalAffine)
+    flowGeo = geoAug(flowGeo, globalAffine)
+
+    # image augmentation
+    mean = [0.448553, 0.431021, 0.410602]
+    mean = tf.expand_dims(tf.expand_dims(tf.expand_dims(mean, 0), 0), 0)
+    photoParam = photoAugParam(batchSize, 0.7, 1.3, 0.2, 0.9,
+                               1.1, 0.7, 1.5, 0.04)
+    frame0photo = photoAug(frame0Geo, photoParam) - mean
+    frame1photo = photoAug(frame1Geo, photoParam) - mean
+
+    dataX = tf.pack([frame0photo, frame1photo], axis=1)
+    dataY = flowGeo
+
     return dataX, dataY
 
 
-def read_data_sets(train_dir,
-                   temporal_extent=5):
+# TODO: rewrite
+def load_UCF101(train_dir, temporal_extent=5):
 
     train_images = []
     validation_images = []
@@ -240,8 +228,57 @@ def read_data_sets(train_dir,
                    temporal_extent=temporal_extent)
 
 
-def load_UCF101(train_dir='UCF-101-gt'):
-    return read_data_sets(train_dir)
+def load_FlyingChairs(data_dir):
+    train_sequences = []
+    validation_sequences = []
+
+    got_ppm1 = False
+    got_ppm2 = False
+    got_flo = False
+
+    train_count = 0
+    validation_count = 0
+
+    file_paths = get_immediate_subfiles(data_dir)
+    count = 0
+
+    split_filepath = os.path.split(data_dir)[0] + '/FlyingChairs_train_val.txt'
+    split_file = open(split_filepath, 'r')
+
+    print 'Creating dataset filename structure...'
+    while count < 22872 * 3:
+        flo_name = os.path.split(file_paths[count])[1]
+        img1_name = os.path.split(file_paths[count+1])[1]
+        img2_name = os.path.split(file_paths[count+2])[1]
+        split = split_file.readline().splitlines()[0]
+        # assuming %5d_{img1,img2,flow}.{ppm,flo}
+        if flo_name[-3:] == 'flo':
+            got_flo = True
+        if img1_name[-3:] == 'ppm':
+            got_ppm1 = True
+        if img2_name[-3:] == 'ppm':
+            got_ppm2 = True
+        if got_ppm1 and got_ppm2 and got_flo:
+            got_ppm1 = False
+            got_ppm2 = False
+            got_flow = False
+            if split == '1':
+                train_sequences.append({
+                    'prefix': data_dir,
+                    'images': [img1_name, img2_name],
+                    'flows': [flo_name]
+                })
+            elif split == '2':
+                validation_sequences.append({
+                    'prefix': data_dir,
+                    'images': [img1_name, img2_name],
+                    'flows': [flo_name]
+                })
+        count += 3
+
+    return DataSet(train=train_sequences,
+                   validation=validation_sequences,
+                   temporal_extent=2)
 
 
 def get_immediate_subdirectories(a_dir):
@@ -280,8 +317,7 @@ class QueueRunner(object):
                                                              target_shape[0],
                                                              target_shape[1],
                                                              target_shape[2]])
-        # The actual queue of data. The queue contains a vector for
-        # the mnist features, and a scalar label.
+        # The actual queue of data.
         self.queue = tf.RandomShuffleQueue(shapes=[[input_shape[0],
                                                     input_shape[1],
                                                     input_shape[2],
@@ -294,8 +330,6 @@ class QueueRunner(object):
                                            min_after_dequeue=batch_size)
 
         # The symbolic operation to add data to the queue
-        # we could do some preprocessing here or do it in numpy.
-        # In this example we do the scaling in numpy
         self.enqueue_op = self.queue.enqueue_many([self.dataX, self.dataY])
 
     def get_inputs(self):

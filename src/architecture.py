@@ -16,7 +16,7 @@ class MSOEPyramid(object):
 
         self.graph = tf.Graph()
         with self.graph.as_default():
-            with tf.device('/gpu:1'):
+            with tf.device('/gpu:' + str(self.user_config['gpu'])):
                 """
                 Construct the MSOE pyramid graph structure
                 """
@@ -50,6 +50,7 @@ class MSOEPyramid(object):
 
                     # attach losses
                     self.loss = l1_loss('l1_loss', self.output, self.target)
+                    self.loss += tf.add_n(tf.get_collection('weight_regs'))
                     self.val_loss = l1_loss('l1_loss_val', self.val_output,
                                             self.val_target_placeholder)
 
@@ -97,13 +98,21 @@ class MSOEPyramid(object):
                               collections=['val'])
 
             # visualize target and predicted flows
-            tf.image_summary('flow predicted',
+            tf.image_summary('flow predicted norm',
                              flow_to_colour('flow_visualization',
                                             self.output),
                              max_images=1)
-            tf.image_summary('flow target',
+            tf.image_summary('flow target norm',
                              flow_to_colour('flow_visualization',
                                             self.target),
+                             max_images=1)
+            tf.image_summary('flow predicted',
+                             flow_to_colour('flow_visualization',
+                                            self.output, norm=False),
+                             max_images=1)
+            tf.image_summary('flow target',
+                             flow_to_colour('flow_visualization',
+                                            self.target, norm=False),
                              max_images=1)
             tf.image_summary('image',
                              self.input_layer[0],
@@ -112,12 +121,24 @@ class MSOEPyramid(object):
             # visualize filters
             viz0 = W_conv1[0, :, :, :, :]
             viz1 = W_conv1[1, :, :, :, :]
-            grid0 = put_kernels_on_grid('kernel_visualization',
+            grid0n = put_kernels_on_grid('kernel_visualization_norm',
                                         viz0, 8, 4)
-            grid1 = put_kernels_on_grid('kernel_visualization',
+            grid1n = put_kernels_on_grid('kernel_visualization_norm',
                                         viz1, 8, 4)
+            grid0 = put_kernels_on_grid('kernel_visualization',
+                                        viz0, 8, 4, norm=False)
+            grid1 = put_kernels_on_grid('kernel_visualization',
+                                        viz1, 8, 4, norm=False)
+            tf.image_summary('filter conv1 0 norm', grid0n)
+            tf.image_summary('filter conv1 1 norm', grid1n)
             tf.image_summary('filter conv1 0', grid0)
             tf.image_summary('filter conv1 1', grid1)
+            for i in range(32):
+                drange = tf.reduce_max(W_conv1[:,:,:,:,i]) - \
+                         tf.reduce_min(W_conv1[:,:,:,:,i])
+                tf.scalar_summary('drange filter conv1 ' + str(i), drange)
+                tf.histogram_summary('histogram filter conv1 ' + str(i),
+                                     W_conv1[:,:,:,:,i])
 
             # merge summaries
             self.summaries = tf.merge_all_summaries()
@@ -167,22 +188,14 @@ class MSOEPyramid(object):
         # for cleanliness
         iterations = self.user_config['iterations']
         base_lr = self.user_config['base_lr']
-        lr_gamma = self.user_config['lr_gamma']
-        lr_policy_start = self.user_config['lr_policy_start']
-        lr_stepsize = self.user_config['lr_stepsize']
         snapshot_frequency = self.user_config['snapshot_frequency']
         print_frequency = self.user_config['print_frequency']
         validation_frequency = self.user_config['validation_frequency']
 
         with self.graph.as_default():
-            learning_rate = tf.placeholder(tf.float32, shape=[])
-
-            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
-                                               beta1=0.9, beta2=0.999,
-                                               epsilon=1e-08,
-                                               use_locking=False, name='Adam')
-
-            train_step = optimizer.minimize(self.loss)
+            with tf.device('/gpu:' + str(self.user_config['gpu'])):
+                optimizer = tf.train.AdamOptimizer(learning_rate=base_lr)
+                train_step = optimizer.minimize(self.loss)
 
             """
             Train over iterations, printing loss at each one
@@ -212,19 +225,9 @@ class MSOEPyramid(object):
 
                 last_print = time.time()
                 for i in range(start_iteration, iterations):
-                    # learning rate step policy
-                    # initial lr update
-                    if (i + 1) == lr_policy_start:
-                        base_lr *= lr_gamma
-                    # subsequent lr updates
-                    if ((i + 1) - lr_policy_start) % lr_stepsize == 0 and \
-                       (i + 1) > lr_policy_start:
-                        base_lr *= lr_gamma
-
                     # run a train step
                     results = sess.run([train_step, self.loss,
-                                        self.summaries, learning_rate],
-                                       feed_dict={learning_rate: base_lr})
+                                        self.summaries])
 
                     # print training information
                     if (i + 1) % print_frequency == 0:
@@ -234,7 +237,7 @@ class MSOEPyramid(object):
                         eta = remaining_it / it_per_sec
                         print 'Iteration %d: loss: %f lr: %f ' \
                               'iter per/s: %f ETA: %s' \
-                              % (i + 1, results[1], results[3], it_per_sec,
+                              % (i + 1, results[1], base_lr, it_per_sec,
                                  str(datetime.timedelta(seconds=eta)))
                         summary_writer.add_summary(results[2], i + 1)
                         summary_writer.flush()

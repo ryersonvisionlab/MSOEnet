@@ -2,6 +2,22 @@ import os
 import numpy as np
 import cv2
 import tensorflow as tf
+import skimage.io
+
+
+def rgb2gray(rgb):
+    return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])  # MATLAB style
+
+
+def load_image(path):
+    IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
+                             dtype='float32').reshape((1, 1, 3))  # RGB
+    IMAGENET_MEAN_GRAY = rgb2gray(IMAGENET_MEAN).astype('float32')
+    rgb = skimage.io.imread(path)  # RGB [0, 255]
+    gray = rgb2gray(rgb).astype('float32')  # grayscale [0, 255]
+    gray_subtracted = gray - IMAGENET_MEAN_GRAY
+    gray_scaled = gray_subtracted / 255.0
+    return np.expand_dims(gray_scaled, 3)  # grayscale [0, 1]
 
 
 def readFlowFile(filename):
@@ -84,7 +100,8 @@ def draw_hsv(flow):
     fx, fy = flow[:, :, 0], flow[:, :, 1]
     v, ang = cv2.cartToPolar(fx, fy)
     hsv = np.zeros((h, w, 3), np.uint8)
-    hsv[..., 0] = ang*(180/np.pi/2)
+    hsv[..., 0] = ang*(180/np.pi/2)  # cv2.COLOR_HSV2BGR expects H = [0, 180]
+                                     # cartToPolar gives ang = [0, 2pi]
     hsv[..., 1] = 255
     hsv[..., 2] = cv2.normalize(v, None, 0, 255, cv2.NORM_MINMAX)
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
@@ -119,17 +136,20 @@ def normalize(tensor, a=0, b=1):
 def cart_to_polar_ocv(x, y, angle_in_degrees=False):
     v = tf.sqrt(tf.add(tf.square(x), tf.square(y)))
     ang = atan2_ocv(y, x)
-    scale = 1 if angle_in_degrees else np.pi / 180
+    scale = 1.0 if angle_in_degrees else np.pi / 180.0
     return v, tf.mul(ang, scale)
 
 
-def draw_hsv_ocv(flow):
+def draw_hsv_ocv(flow, norm):
     fx, fy = flow[:, :, :, 0], flow[:, :, :, 1]
-    v, ang = cart_to_polar_ocv(fx, fy)
+    v, ang = cart_to_polar_ocv(fx, fy)  # returns angle in rads
 
-    h = normalize(tf.mul(ang, 180 / np.pi))
+    h = ang / (2*np.pi)  # hsv_to_rgb expects everything to be in range [0, 1]
     s = tf.ones_like(h)
-    v = normalize(v)
+    if norm:
+        v = normalize(v)
+    else:
+        v = tf.clip_by_value(v / 50.0, 0.0, 1.0)
 
     hsv = tf.pack([h, s, v], 3)
     rgb = tf.image.hsv_to_rgb(hsv) * 255

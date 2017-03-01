@@ -1,22 +1,21 @@
 import tensorflow as tf
-from src.dataset import read_data_sets
-from src.dataset import QueueRunner
+from src.dataset import *
 from src.util import draw_hsv_ocv
 
 
 def data_layer(name, path, batch_size, temporal_extent, num_threads):
     with tf.get_default_graph().name_scope(name):
-        # read UCF-101 image sequences with ground truth flows
-        ucf101 = read_data_sets(path, temporal_extent)
+        # read image sequences with ground truth flows
+        d = load_FlyingChairs(path)
 
         # read validation data
-        x_val, y_val_ = ucf101.validation_data()
+        x_val, y_val_ = d.validation_data()
 
         input_shape = x_val.shape[1:]
         target_shape = y_val_.shape[1:]
 
         with tf.device("/cpu:0"):
-            queue_runner = QueueRunner(ucf101, input_shape, target_shape,
+            queue_runner = QueueRunner(d, input_shape, target_shape,
                                        batch_size, num_threads)
             x, y_ = queue_runner.get_inputs()
 
@@ -36,10 +35,15 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                        kernel_spatial_size,
                                        in_channels,
                                        out_channels],
-                                      initializer=tf.truncated_normal_initializer(stddev=0.1))
+                                      initializer=tf.truncated_normal_initializer(stddev=0.3))
             biases = tf.get_variable('biases',
                                      [out_channels],
                                      initializer=tf.constant_initializer(0.0))
+
+            # weight decay
+            if name == 'conv1':
+                reg = 0.5 * tf.nn.l2_loss(weights) * 4e-10
+                tf.add_to_collection('weight_regs', reg)
 
             # spatially pad the image, but not temporally
             input_layer = tf.pad(input_layer,
@@ -129,12 +133,12 @@ def channel_concat3d(name, input_layer, axis=4):
         return tf.concat(axis, input_layer)
 
 
-def flow_to_colour(name, input_layer):
+def flow_to_colour(name, input_layer, norm=True):
     with tf.get_default_graph().name_scope(name):
-        return draw_hsv_ocv(input_layer)
+        return draw_hsv_ocv(input_layer, norm)
 
 
-def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1):
+def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1, norm=True):
     '''
     Visualize conv. features as an image (mostly for the 1st layer).
     Place kernel into a grid, with some paddings between adjacent filters.
@@ -155,7 +159,10 @@ def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1):
         x_min = tf.reduce_min(kernel)
         x_max = tf.reduce_max(kernel)
 
-        kernel1 = (kernel - x_min) / (x_max - x_min)
+        if norm:
+            kernel1 = (kernel - x_min) / (x_max - x_min)
+        else:
+            kernel1 = 0.5 + tf.clip_by_value(kernel, -1.0, 1.0) / 2.0
 
         # pad X and Y
         x1 = tf.pad(kernel1, tf.constant([[pad, pad],
