@@ -35,13 +35,13 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                        kernel_spatial_size,
                                        in_channels,
                                        out_channels],
-                                      initializer=tf.truncated_normal_initializer(stddev=0.3))
+                                      initializer=tf.truncated_normal_initializer(stddev=0.4))
             biases = tf.get_variable('biases',
                                      [out_channels],
                                      initializer=tf.constant_initializer(0.0))
 
             # weight decay
-            if name == 'conv1':
+            if name == 'MSOE_conv1':
                 reg = 0.5 * tf.nn.l2_loss(weights) * 4e-10
                 tf.add_to_collection('weight_regs', reg)
 
@@ -87,7 +87,8 @@ def l1_normalize(name, input_layer, axis=4, eps=1e-12):
 
 def l2_loss(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
-        return tf.reduce_mean(tf.square(tf.sub(input_layer, target)))
+        loss = tf.reduce_sum(tf.square(tf.sub(input_layer, target)))
+        return loss / tf.to_float(tf.size(input_layer))
 
 
 def l1_loss(name, input_layer, target):
@@ -136,6 +137,11 @@ def channel_concat3d(name, input_layer, axis=4):
 def flow_to_colour(name, input_layer, norm=True):
     with tf.get_default_graph().name_scope(name):
         return draw_hsv_ocv(input_layer, norm)
+
+
+def softmax(name, input_layer, axis=-1):
+    with tf.get_default_graph().name_scope(name):
+        return tf.nn.softmax(input_layer, dim=axis)
 
 
 def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1, norm=True):
