@@ -3,7 +3,7 @@ import random
 import numpy as np
 import tensorflow as tf
 import threading
-from util import readFlowFile, load_image
+from util import readFlowFile, load_image, rgb2gray
 from augmentation import *
 
 
@@ -125,32 +125,33 @@ class DataSet(object):
         return packaged_data, packaged_gts
 
 
-# TODO: clean out the code duplication, ew
-# TODO: I'm not copying data here, so it's probably best not to return anything
-# TODO: rewrite
 def augment(dataX, dataY, batchSize):
     frame0 = dataX[:, 0]
     frame1 = dataX[:, 1]
     flow = dataY
 
+    # random crop
+
     # geo augmentation
     globalAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, True)
     localAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, False)
     globalLocalAffine = tf.batch_matmul(localAffine, globalAffine)
-    frame0Geo = geoAug(frame0, globalAffine)
-    frame1Geo = geoAug(frame1, globalLocalAffine)
+    frame0Geo = geoAug(frame0, globalAffine)  # resize here
+    frame1Geo = geoAug(frame1, globalLocalAffine)  # resize here
 
     # augment flow
     flowGeo = geoAugFlow(flow, globalAffine, globalLocalAffine)
     flowGeo = geoAug(flowGeo, globalAffine)
 
     # image augmentation
-    mean = [0.448553, 0.431021, 0.410602]
-    mean = tf.expand_dims(tf.expand_dims(tf.expand_dims(mean, 0), 0), 0)
+    IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
+                             dtype='float32').reshape((1, 1, 3)) / 255.0
+    IMAGENET_MEAN_GRAY = tf.expand_dims(
+                    rgb2gray(IMAGENET_MEAN).astype('float32'), 0)
     photoParam = photoAugParam(batchSize, 0.7, 1.3, 0.2, 0.9,
                                1.1, 0.7, 1.5, 0.04)
-    frame0photo = photoAug(frame0Geo, photoParam) - mean
-    frame1photo = photoAug(frame1Geo, photoParam) - mean
+    frame0photo = photoAug(frame0Geo, photoParam) - IMAGENET_MEAN_GRAY
+    frame1photo = photoAug(frame1Geo, photoParam) - IMAGENET_MEAN_GRAY
 
     dataX = tf.pack([frame0photo, frame1photo], axis=1)
     dataY = flowGeo

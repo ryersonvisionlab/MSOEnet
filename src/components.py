@@ -1,6 +1,6 @@
 import tensorflow as tf
 from src.dataset import *
-from src.util import draw_hsv_ocv
+from src.util import draw_hsv_ocv, gauss2d_kernel
 
 
 def data_layer(name, path, batch_size, temporal_extent, num_threads):
@@ -71,6 +71,29 @@ def avg_pool3d(name, input_layer, kernel_spatial_size,
                                 strides=[1, 1, spatial_stride,
                                          spatial_stride, 1],
                                 padding='SAME')
+
+
+def blur_downsample3d(name, input_layer, kernel_spatial_size,
+                      spatial_stride, sigma=0.5):
+    with tf.get_default_graph().name_scope(name):
+        # gauss kernel
+        w = tf.constant(gauss2d_kernel((kernel_spatial_size,
+                                        kernel_spatial_size), sigma=sigma),
+                        dtype=tf.float32)
+        w = tf.reshape(w, [1, kernel_spatial_size, kernel_spatial_size, 1, 1])
+
+        # spatially pad the image sequence, but not temporally
+        input_layer = tf.pad(input_layer,
+                             [[0, 0], [0, 0],
+                              [kernel_spatial_size / 2,
+                               kernel_spatial_size / 2],
+                              [kernel_spatial_size / 2,
+                               kernel_spatial_size / 2],
+                              [0, 0]], 'SYMMETRIC')
+
+        return tf.nn.conv3d(input_layer, w,
+                            strides=[1, 1, spatial_stride, spatial_stride, 1],
+                            padding='VALID')
 
 
 def eltwise_square(name, input_layer):

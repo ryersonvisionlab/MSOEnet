@@ -9,10 +9,12 @@ def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])  # MATLAB style
 
 
-def load_image(path):
+def load_image(path, mean_sub=True):
     IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
                              dtype='float32').reshape((1, 1, 3))  # RGB
     IMAGENET_MEAN_GRAY = rgb2gray(IMAGENET_MEAN).astype('float32')
+    if mean_sub is False:
+        IMAGENET_MEAN_GRAY = 0.0
     rgb = skimage.io.imread(path)  # RGB [0, 255]
     gray = rgb2gray(rgb).astype('float32')  # grayscale [0, 255]
     gray_subtracted = gray - IMAGENET_MEAN_GRAY
@@ -155,6 +157,21 @@ def draw_hsv_ocv(flow, norm):
     rgb = tf.image.hsv_to_rgb(hsv) * 255
 
     return tf.cast(rgb, tf.uint8)
+
+
+def gauss2d_kernel(shape=(3, 3), sigma=0.5):
+    """
+    2D gaussian mask - should give the same result as MATLAB's
+    fspecial('gaussian',[shape],[sigma])
+    """
+    m, n = [(ss-1.)/2. for ss in shape]
+    y, x = np.ogrid[-m:m+1, -n:n+1]
+    h = np.exp(-(x*x + y*y) / (2.*sigma*sigma))
+    h[h < np.finfo(h.dtype).eps*h.max()] = 0
+    sumh = h.sum()
+    if sumh != 0:
+        h /= sumh
+    return h
 
 
 def check_snapshots(folder='snapshots/', train=True):

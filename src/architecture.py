@@ -158,18 +158,18 @@ class MSOEPyramid(object):
                 tf.scalar_summary('drange filter conv1 ' + str(i), drange)
                 tf.histogram_summary('histogram filter conv1 ' + str(i),
                                      W_conv1[:, :, :, :, i])
-            # for i in range(5):
-            #     fx = W_conv3[:, :, :, 64*i:64*(i+1), 0]
-            #     fy = W_conv3[:, :, :, 64*i:64*(i+1), 1]
-            #     tf.histogram_summary('histogram of decode '
-            #                          'weights scale_' + str(i),
-            #                          tf.sqrt(fx**2 + fy**2))
 
             # visualize gates
             for scale in range(self.user_config['num_scales']):
                 tf.image_summary('gate_' + str(scale),
                                  self.gates[..., scale:scale+1],
                                  max_images=1)
+
+            # visualize queue usage
+            data_queue = self.queue_runner
+            data_queue_capacity = data_queue.batch_size * data_queue.n_threads
+            tf.scalar_summary('queue saturation',
+                              data_queue.queue.size() / data_queue_capacity)
 
             # merge summaries
             self.summaries = tf.merge_all_summaries()
@@ -194,9 +194,9 @@ class MSOEPyramid(object):
                 spatial_stride = 2**scale
 
                 # downsample data (batchx2xhxwx1)
-                small_input = avg_pool3d('downsample',
-                                         input_layer, 3, 1,
-                                         spatial_stride)
+                small_input = blur_downsample3d('downsample',
+                                                input_layer, 3,
+                                                spatial_stride, sigma=2)
 
                 # create MSOE and insert data (batchx1xhxwx64)
                 small_msoe_output = MSOE('MSOE_' + str(scale),
