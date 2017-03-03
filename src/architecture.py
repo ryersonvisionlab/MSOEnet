@@ -52,7 +52,7 @@ class MSOEPyramid(object):
                     # attach losses
                     self.loss = l1_loss('l1_loss', self.output, self.target)
                     self.loss += tf.add_n(tf.get_collection('weight_regs'))
-                    self.val_loss = l1_loss('l1_loss_val', self.val_output,
+                    self.val_loss = l2_loss('epe_val', self.val_output,
                                             self.val_target_placeholder)
 
                     # attach summaries
@@ -145,9 +145,9 @@ class MSOEPyramid(object):
 
             viz0 = gW_conv1[0, :, :, :, :]
             grid0n = put_kernels_on_grid('gate_kernel_visualization_norm',
-                                         viz0, 8, 4)
+                                         viz0, 8, 2)
             grid0 = put_kernels_on_grid('gate_kernel_visualization',
-                                        viz0, 8, 4, norm=False)
+                                        viz0, 8, 2, norm=False)
             tf.image_summary('filter gate_conv1 0 norm', grid0n)
             tf.image_summary('filter gate_conv1 0', grid0)
 
@@ -195,7 +195,7 @@ class MSOEPyramid(object):
 
                 # downsample data (batchx2xhxwx1)
                 small_input = blur_downsample3d('downsample',
-                                                input_layer, 3,
+                                                input_layer, 5,
                                                 spatial_stride, sigma=2)
 
                 # create MSOE and insert data (batchx1xhxwx64)

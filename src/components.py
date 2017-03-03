@@ -28,6 +28,15 @@ def conv3d(name, input_layer, kernel_spatial_size,
         with tf.variable_scope(name, reuse=reuse):
             in_channels = input_layer.get_shape().as_list()[-1]
 
+            if name == 'Gate_conv1':
+                # MSRA initialization (avg variance norm)
+                initializer = tf.contrib.layers \
+                                .variance_scaling_initializer(factor=2.0,
+                                                              mode='FAN_AVG',
+                                                              uniform=False)
+            else:
+                initializer = tf.truncated_normal_initializer(stddev=0.4)
+
             # going to be sharing variables
             weights = tf.get_variable('weights',
                                       [kernel_temporal_size,
@@ -35,7 +44,7 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                        kernel_spatial_size,
                                        in_channels,
                                        out_channels],
-                                      initializer=tf.truncated_normal_initializer(stddev=0.4))
+                                      initializer=initializer)
             biases = tf.get_variable('biases',
                                      [out_channels],
                                      initializer=tf.constant_initializer(0.0))
@@ -165,6 +174,15 @@ def flow_to_colour(name, input_layer, norm=True):
 def softmax(name, input_layer, axis=-1):
     with tf.get_default_graph().name_scope(name):
         return tf.nn.softmax(input_layer, dim=axis)
+
+
+def leaky_relu(input_layer, alpha=0.01):
+    return tf.maximum(tf.mul(input_layer, alpha), input_layer)
+
+
+def elu(input_layer, alpha=1.0):
+    return tf.select(tf.greater(input_layer, 0.0),
+                     input_layer, alpha * (tf.exp(input_layer) - 1.0))
 
 
 def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1, norm=True):
