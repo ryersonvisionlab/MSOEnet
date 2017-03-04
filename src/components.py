@@ -166,6 +166,11 @@ def channel_concat3d(name, input_layer, axis=4):
         return tf.concat(axis, input_layer)
 
 
+def pack(name, input_layer, axis):
+    with tf.get_default_graph().name_scope(name):
+        return tf.pack(input_layer, axis)
+
+
 def flow_to_colour(name, input_layer, norm=True):
     with tf.get_default_graph().name_scope(name):
         return draw_hsv_ocv(input_layer, norm)
