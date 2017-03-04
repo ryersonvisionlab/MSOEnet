@@ -180,16 +180,12 @@ class MSOEPyramid(object):
             # initial MSOE on original input size (batchx1xHxWx64)
             initial_msoe = MSOE('MSOE_0', input_layer, reuse).output
 
-            # initial GatingNetwork on original input size (batchx1xHxWx4)
+            # initial GatingNetwork on original input size (batchx1xHxWx1)
             initial_gate = GatingNetwork('Gate_0', input_layer, reuse).output
-
-            # convolve it to get gate outputs (1x1x1x4x1)
-            initial_output_gate_layer = conv3d('Gate_conv2', initial_gate,
-                                               1, 1, 1, reuse)
 
             # initialize pyramid
             msoe_array = [initial_msoe]
-            gate_array = [initial_output_gate_layer]
+            gate_array = [initial_gate]
 
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
@@ -197,66 +193,58 @@ class MSOEPyramid(object):
                 spatial_stride = 2**scale
 
                 # downsample data (batchx2xhxwx1)
-                small_input = blur_downsample3d('downsample',
+                small_input = blur_downsample3d('input_downsample_' +
+                                                str(scale),
                                                 input_layer, 5,
                                                 spatial_stride, sigma=2)
 
                 # create MSOE and insert data (batchx1xhxwx64)
-                small_msoe_output = MSOE('MSOE_' + str(scale),
-                                         small_input, reuse=True).output
+                small_msoe = MSOE('MSOE_' + str(scale), small_input,
+                                  reuse=True).output
 
-                # create GatingNetwork and insert data (batchx1xhxwx4)
-                small_gate_output = GatingNetwork('Gate_' + str(scale),
-                                                  small_input,
-                                                  reuse=True).output
+                # create GatingNetwork and insert data (batchx1xhxwx1)
+                small_gate = GatingNetwork('Gate_' + str(scale), small_input,
+                                           reuse=True).output
 
                 # upsample flow output (batchx1xHxWx64)
-                output_msoe_layer = bilinear_resample3d('MSOE_upsample_' +
-                                                        str(scale),
-                                                        small_msoe_output,
-                                                        tf.shape(input_layer)
-                                                        [2:4])
+                msoe = bilinear_resample3d('MSOE_upsample_' + str(scale),
+                                           small_msoe, tf.shape(input_layer)
+                                           [2:4])
 
-                # upsample gate output (batchx1xHxWx4)
-                up_gate_layer = bilinear_resample3d('Gate_upsample_' +
-                                                    str(scale),
-                                                    small_gate_output,
-                                                    tf.shape(input_layer)
-                                                    [2:4])
+                # upsample gate output (batchx1xHxWx1)
+                gate = bilinear_resample3d('Gate_upsample_' + str(scale),
+                                           small_gate, tf.shape(input_layer)
+                                           [2:4])
 
-                # convolve it to get gate outputs (1x1x1x4x1)
-                output_gate_layer = conv3d('Gate_conv2', up_gate_layer,
-                                           1, 1, 1, reuse=True)
-
-                msoe_array.append(output_msoe_layer)
-                gate_array.append(output_gate_layer)
+                msoe_array.append(msoe)
+                gate_array.append(gate)
 
             # channel concatenate gate outputs (batchx1xHxWxnum_scales)
-            concatenated_gates = channel_concat3d('Gate_concat', gate_array)
+            concatenated_gates = channel_concat3d('Gates_concat', gate_array)
 
             # channel-wise softmax the gate outputs (batchx1xHxWxnum_scales)
-            concatenated_gates = softmax('Gate_softmax', concatenated_gates)
+            gates = softmax('Gates_softmax', concatenated_gates)
 
             # for image summary visualization
             if name == 'train':
-                self.gates = concatenated_gates[:, 0, :, :, :]
+                self.gates = gates[:, 0, :, :, :]
 
             # apply per-scale gating to msoe outputs
-            gated_msoes = []
-            for scale in range(num_scales):
+            gated_msoes = [gates[..., :1] * msoe_array[0]]
+            for scale in range(1, num_scales):
                 # scale responses relative to the scale
                 weight = 2**scale
 
                 msoe_at_scale = msoe_array[scale]
-                gate_at_scale = concatenated_gates[:, :, :, :, scale:scale+1]
+                gate_at_scale = gates[..., scale:scale+1]
 
-                # really slow
+                # slow
                 gated_msoe_at_scale = (gate_at_scale * weight) * msoe_at_scale
 
                 gated_msoes.append(gated_msoe_at_scale)
 
             # sum up gated responses over all scales (batchx1xHxWx64)
-            gated_msoe = tf.add_n(gated_msoes)  # adds 0.2 iter per second
+            gated_msoe = tf.add_n(gated_msoes)
 
             # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
             output = conv3d('conv3', gated_msoe, 1, 1, 2, reuse)
