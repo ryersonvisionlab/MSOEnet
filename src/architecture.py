@@ -110,22 +110,22 @@ class MSOEPyramid(object):
             tf.summary.image('flow predicted norm',
                              flow_to_colour('flow_visualization',
                                             self.output),
-                             max_images=1)
+                             max_outputs=1)
             tf.summary.image('flow target norm',
                              flow_to_colour('flow_visualization',
                                             self.target),
-                             max_images=1)
+                             max_outputs=1)
             tf.summary.image('flow predicted',
                              flow_to_colour('flow_visualization',
                                             self.output, norm=False),
-                             max_images=1)
+                             max_outputs=1)
             tf.summary.image('flow target',
                              flow_to_colour('flow_visualization',
                                             self.target, norm=False),
-                             max_images=1)
+                             max_outputs=1)
             tf.summary.image('image',
                              self.input_layer[0],
-                             max_images=5)
+                             max_outputs=5)
 
             # visualize filters
             viz0 = W_conv1[0, :, :, :, :]
@@ -163,7 +163,7 @@ class MSOEPyramid(object):
             for scale in range(self.user_config['num_scales']):
                 tf.summary.image('gate_' + str(scale),
                                  self.gates[..., scale:scale+1],
-                                 max_images=1)
+                                 max_outputs=1)
 
             # visualize queue usage
             data_queue = self.queue_runner
@@ -272,8 +272,8 @@ class MSOEPyramid(object):
             """
             Train over iterations, printing loss at each one
             """
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(var_list=tf.trainable_variables(),
+                                   max_to_keep=0, pad_step_number=16)
             with tf.Session(config=self.tf_config) as sess:
 
                 # check snapshots
@@ -281,7 +281,7 @@ class MSOEPyramid(object):
 
                 # start summary writers
                 summary_writer = tf.summary.FileWriter('logs/train',
-                                                        sess.graph)
+                                                       sess.graph)
                 summary_writer_val = tf.summary.FileWriter('logs/val')
 
                 # start the tensorflow QueueRunners
@@ -330,8 +330,7 @@ class MSOEPyramid(object):
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:
                         print 'Saving snapshot...'
-                        saver.save(sess, 'snapshots/iter_' +
-                                   str(i + 1).zfill(16) + '.ckpt')
+                        saver.save(sess, 'snapshots/iter', global_step=i+1)
 
     def validate_chunks(self, sess):
         batch_size = self.user_config['batch_size']
@@ -360,8 +359,7 @@ class MSOEPyramid(object):
     def run_test(self):
         with self.graph.as_default():
             # TODO: switch to tf.train.import_meta_graph
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(max_to_keep=0)
             with tf.Session(config=self.tf_config) as sess:
                 # load model
                 model = check_snapshots(folder='final_model', train=False)
@@ -372,8 +370,7 @@ class MSOEPyramid(object):
 
     def save_model(self):
         with self.graph.as_default():
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(max_to_keep=0)
             with tf.Session(config=self.tf_config) as sess:
                 # load model
                 model = check_snapshots(train=False)

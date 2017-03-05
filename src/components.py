@@ -187,7 +187,7 @@ def leaky_relu(input_layer, alpha=0.01):
 
 def elu(input_layer, alpha=1.0):
     return tf.where(tf.greater(input_layer, 0.0),
-                     input_layer, alpha * (tf.exp(input_layer) - 1.0))
+                    input_layer, alpha * (tf.exp(input_layer) - 1.0))
 
 
 def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1, norm=True):

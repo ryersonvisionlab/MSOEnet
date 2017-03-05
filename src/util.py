@@ -121,7 +121,7 @@ def atan2_ocv(y, x):
 
     ax, ay = tf.abs(x), tf.abs(y)
     c = tf.where(tf.greater_equal(ax, ay), tf.div(ay, ax + DBL_EPSILON),
-                  tf.div(ax, ay + DBL_EPSILON))
+                 tf.div(ax, ay + DBL_EPSILON))
     c2 = tf.square(c)
     angle = (((atan2_p7 * c2 + atan2_p5) * c2 + atan2_p3) * c2 + atan2_p1) * c
     angle = tf.where(tf.greater_equal(ax, ay), angle, 90.0 - angle)
@@ -131,7 +131,8 @@ def atan2_ocv(y, x):
 
 
 def normalize(tensor, a=0, b=1):
-    return tf.div(tf.multiply(tf.subtract(tensor, tf.reduce_min(tensor)), b - a),
+    return tf.div(tf.multiply(tf.subtract(tensor, tf.reduce_min(tensor)),
+                              b - a),
                   tf.subtract(tf.reduce_max(tensor), tf.reduce_min(tensor)))
 
 

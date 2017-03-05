@@ -17,6 +17,7 @@ class GatingNetwork(object):
             # activation
             h_conv1 = eltwise_square('square', conv1)
 
+            # decode to final gate output
             gate_output = conv3d('Gate_conv2', h_conv1, 1, 1, 1, reuse)
 
             self.output = gate_output
