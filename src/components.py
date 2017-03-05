@@ -113,19 +113,19 @@ def eltwise_square(name, input_layer):
 def l1_normalize(name, input_layer, axis=4, eps=1e-12):
     with tf.get_default_graph().name_scope(name):
         abs_sum = tf.reduce_sum(tf.abs(input_layer), axis, keep_dims=True)
-        input_layer_inv_norm = tf.inv(tf.maximum(abs_sum, eps))
-        return tf.mul(input_layer, input_layer_inv_norm)
+        input_layer_inv_norm = tf.reciprocal(tf.maximum(abs_sum, eps))
+        return tf.multiply(input_layer, input_layer_inv_norm)
 
 
 def l2_loss(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
-        loss = tf.reduce_sum(tf.square(tf.sub(input_layer, target)))
+        loss = tf.reduce_sum(tf.square(tf.subtract(input_layer, target)))
         return loss / tf.to_float(tf.size(input_layer))
 
 
 def l1_loss(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
-        return tf.reduce_mean(tf.abs(tf.sub(input_layer, target)))
+        return tf.reduce_mean(tf.abs(tf.subtract(input_layer, target)))
 
 
 def reshape(name, input_layer, output_shape):
@@ -140,11 +140,11 @@ def area_resample(name, input_layer, output_shape):
 
 def area_resample3d(name, input_layer, output_shape, axis=1):
     with tf.get_default_graph().name_scope(name):
-        unpacked = tf.unpack(input_layer, axis=axis)
+        unpacked = tf.unstack(input_layer, axis=axis)
         for i in range(len(unpacked)):
             unpacked[i] = area_resample('area_resample', unpacked[i],
                                         output_shape)
-        return tf.pack(unpacked, axis=axis)
+        return tf.stack(unpacked, axis=axis)
 
 
 def bilinear_resample(name, input_layer, output_shape):
@@ -154,21 +154,21 @@ def bilinear_resample(name, input_layer, output_shape):
 
 def bilinear_resample3d(name, input_layer, output_shape, axis=1):
     with tf.get_default_graph().name_scope(name):
-        unpacked = tf.unpack(input_layer, axis=axis)
+        unpacked = tf.unstack(input_layer, axis=axis)
         for i in range(len(unpacked)):
             unpacked[i] = bilinear_resample('bilinear_resample', unpacked[i],
                                             output_shape)
-        return tf.pack(unpacked, axis=axis)
+        return tf.stack(unpacked, axis=axis)
 
 
 def channel_concat3d(name, input_layer, axis=4):
     with tf.get_default_graph().name_scope(name):
-        return tf.concat(axis, input_layer)
+        return tf.concat(axis=axis, values=input_layer)
 
 
 def pack(name, input_layer, axis):
     with tf.get_default_graph().name_scope(name):
-        return tf.pack(input_layer, axis)
+        return tf.stack(input_layer, axis)
 
 
 def flow_to_colour(name, input_layer, norm=True):
@@ -182,11 +182,11 @@ def softmax(name, input_layer, axis=-1):
 
 
 def leaky_relu(input_layer, alpha=0.01):
-    return tf.maximum(tf.mul(input_layer, alpha), input_layer)
+    return tf.maximum(tf.multiply(input_layer, alpha), input_layer)
 
 
 def elu(input_layer, alpha=1.0):
-    return tf.select(tf.greater(input_layer, 0.0),
+    return tf.where(tf.greater(input_layer, 0.0),
                      input_layer, alpha * (tf.exp(input_layer) - 1.0))
 
 
@@ -230,12 +230,12 @@ def put_kernels_on_grid(name, kernel, grid_Y, grid_X, pad=1, norm=True):
         # put NumKernels to the 1st dimension
         x2 = tf.transpose(x1, (3, 0, 1, 2))
         # organize grid on Y axis
-        x3 = tf.reshape(x2, tf.pack([grid_X, Y * grid_Y, X, channels]))  # 3
+        x3 = tf.reshape(x2, tf.stack([grid_X, Y * grid_Y, X, channels]))  # 3
 
         # switch X and Y axes
         x4 = tf.transpose(x3, (0, 2, 1, 3))
         # organize grid on X axis
-        x5 = tf.reshape(x4, tf.pack([1, X * grid_X, Y * grid_Y, channels]))  # 3
+        x5 = tf.reshape(x4, tf.stack([1, X * grid_X, Y * grid_Y, channels]))  # 3
 
         # back to normal order (not combining with the next step for clarity)
         x6 = tf.transpose(x5, (2, 1, 3, 0))

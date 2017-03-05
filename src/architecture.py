@@ -65,7 +65,7 @@ class MSOEPyramid(object):
                                                           [None, 2, 256, 256,
                                                            1], name='images')
                     else:
-                        self.input_layer = tf.pack(input)
+                        self.input_layer = tf.stack(input)
 
                     """ Create pyramid """
                     self.output = self.build_pyramid('MSOEnet',
@@ -101,29 +101,29 @@ class MSOEPyramid(object):
                 gW_conv1 = tf.get_variable('weights')
 
             # graph loss
-            tf.scalar_summary('loss', self.loss)
+            tf.summary.scalar('loss', self.loss)
             self.average_val_loss = tf.placeholder(tf.float32)
-            tf.scalar_summary('val_loss', self.average_val_loss,
+            tf.summary.scalar('val_loss', self.average_val_loss,
                               collections=['val'])
 
             # visualize target and predicted flows
-            tf.image_summary('flow predicted norm',
+            tf.summary.image('flow predicted norm',
                              flow_to_colour('flow_visualization',
                                             self.output),
                              max_images=1)
-            tf.image_summary('flow target norm',
+            tf.summary.image('flow target norm',
                              flow_to_colour('flow_visualization',
                                             self.target),
                              max_images=1)
-            tf.image_summary('flow predicted',
+            tf.summary.image('flow predicted',
                              flow_to_colour('flow_visualization',
                                             self.output, norm=False),
                              max_images=1)
-            tf.image_summary('flow target',
+            tf.summary.image('flow target',
                              flow_to_colour('flow_visualization',
                                             self.target, norm=False),
                              max_images=1)
-            tf.image_summary('image',
+            tf.summary.image('image',
                              self.input_layer[0],
                              max_images=5)
 
@@ -138,42 +138,42 @@ class MSOEPyramid(object):
                                         viz0, 8, 4, norm=False)
             grid1 = put_kernels_on_grid('kernel_visualization',
                                         viz1, 8, 4, norm=False)
-            tf.image_summary('filter conv1 0 norm', grid0n)
-            tf.image_summary('filter conv1 1 norm', grid1n)
-            tf.image_summary('filter conv1 0', grid0)
-            tf.image_summary('filter conv1 1', grid1)
+            tf.summary.image('filter conv1 0 norm', grid0n)
+            tf.summary.image('filter conv1 1 norm', grid1n)
+            tf.summary.image('filter conv1 0', grid0)
+            tf.summary.image('filter conv1 1', grid1)
 
             viz0 = gW_conv1[0, :, :, :, :]
             grid0n = put_kernels_on_grid('gate_kernel_visualization_norm',
                                          viz0, 4, 1)
             grid0 = put_kernels_on_grid('gate_kernel_visualization',
                                         viz0, 4, 1, norm=False)
-            tf.image_summary('filter gate_conv1 0 norm', grid0n)
-            tf.image_summary('filter gate_conv1 0', grid0)
+            tf.summary.image('filter gate_conv1 0 norm', grid0n)
+            tf.summary.image('filter gate_conv1 0', grid0)
 
             # histogram of filters
             for i in range(32):
                 drange = tf.reduce_max(W_conv1[:, :, :, :, i]) - \
                          tf.reduce_min(W_conv1[:, :, :, :, i])
-                tf.scalar_summary('drange filter conv1 ' + str(i), drange)
-                tf.histogram_summary('histogram filter conv1 ' + str(i),
+                tf.summary.scalar('drange filter conv1 ' + str(i), drange)
+                tf.summary.histogram('histogram filter conv1 ' + str(i),
                                      W_conv1[:, :, :, :, i])
 
             # visualize gates
             for scale in range(self.user_config['num_scales']):
-                tf.image_summary('gate_' + str(scale),
+                tf.summary.image('gate_' + str(scale),
                                  self.gates[..., scale:scale+1],
                                  max_images=1)
 
             # visualize queue usage
             data_queue = self.queue_runner
             data_queue_capacity = data_queue.batch_size * data_queue.n_threads
-            tf.scalar_summary('queue saturation',
+            tf.summary.scalar('queue saturation',
                               data_queue.queue.size() / data_queue_capacity)
 
             # merge summaries
-            self.summaries = tf.merge_all_summaries()
-            self.val_summaries = tf.merge_all_summaries(key='val')
+            self.summaries = tf.summary.merge_all()
+            self.val_summaries = tf.summary.merge_all(key='val')
 
     def build_pyramid(self, name, input_layer, reuse=None):
         with tf.get_default_graph().name_scope(name):
@@ -280,9 +280,9 @@ class MSOEPyramid(object):
                 resume, start_iteration = check_snapshots()
 
                 # start summary writers
-                summary_writer = tf.train.SummaryWriter('logs/train',
+                summary_writer = tf.summary.FileWriter('logs/train',
                                                         sess.graph)
-                summary_writer_val = tf.train.SummaryWriter('logs/val')
+                summary_writer_val = tf.summary.FileWriter('logs/val')
 
                 # start the tensorflow QueueRunners
                 tf.train.start_queue_runners(sess=sess)
@@ -293,7 +293,7 @@ class MSOEPyramid(object):
                 if resume:
                     saver.restore(sess, resume)
                 else:
-                    sess.run(tf.initialize_all_variables())
+                    sess.run(tf.global_variables_initializer())
 
                 last_print = time.time()
                 for i in range(start_iteration, iterations):
