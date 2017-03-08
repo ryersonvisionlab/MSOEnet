@@ -164,6 +164,9 @@ class MSOEPyramid(object):
                 tf.summary.image('gate_' + str(scale),
                                  self.gates[..., scale:scale+1],
                                  max_outputs=1)
+                tf.summary.image('input_' + str(scale),
+                                 self.inputs[scale],
+                                 max_outputs=1)
 
             # visualize queue usage
             data_queue = self.queue_runner
@@ -186,6 +189,7 @@ class MSOEPyramid(object):
             # initialize pyramid
             msoe_array = [initial_msoe]
             gate_array = [initial_gate]
+            inputs = [input_layer[:, 0]]
 
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
@@ -197,6 +201,8 @@ class MSOEPyramid(object):
                                                 str(scale),
                                                 input_layer, 5,
                                                 spatial_stride, sigma=2)
+
+                inputs.append(small_input[:, 0])
 
                 # create MSOE and insert data (batchx1xhxwx64)
                 small_msoe = MSOE('MSOE_' + str(scale), small_input,
@@ -227,7 +233,8 @@ class MSOEPyramid(object):
 
             # for image summary visualization
             if name == 'train':
-                self.gates = gates[:, 0, :, :, :]
+                self.gates = gates[:, 0]
+                self.inputs = inputs
 
             # apply per-scale gating to msoe outputs
             gated_msoes = [gates[..., :1] * msoe_array[0]]
@@ -272,8 +279,7 @@ class MSOEPyramid(object):
             """
             Train over iterations, printing loss at each one
             """
-            saver = tf.train.Saver(var_list=tf.trainable_variables(),
-                                   max_to_keep=0, pad_step_number=16)
+            saver = tf.train.Saver(max_to_keep=0, pad_step_number=16)
             with tf.Session(config=self.tf_config) as sess:
 
                 # check snapshots
@@ -338,6 +344,7 @@ class MSOEPyramid(object):
         num_val = self.val_input_layer.shape[0]
         num_chunks = num_val / batch_size
 
+        # TODO: cover case for when num_val not divisible by batch_size
         for j in range(num_chunks):
             start = batch_size * j
             end = start + batch_size

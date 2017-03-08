@@ -7,3 +7,5 @@
 - `$ conda install scikit-image`
 - `$ pip install --upgrade \
   https://storage.googleapis.com/tensorflow/linux/cpu/protobuf-3.1.0-cp27-none-linux_x86_64.whl`
+
+Might need to uninstall and reinstall numpy using pip.
