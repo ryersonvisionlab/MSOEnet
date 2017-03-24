@@ -4,7 +4,7 @@ def bilinearSampler(im, grid, out_size):
 	def _repeat(x, n_repeats):
 		with tf.get_default_graph().name_scope('_repeat'):
 		    rep = tf.transpose(
-		        tf.expand_dims(tf.ones(shape=tf.pack([n_repeats, ])), 1), [1, 0])
+		        tf.expand_dims(tf.ones(shape=tf.stack([n_repeats, ])), 1), [1, 0])
 		    #modifications to the casting to force computations on the gpu
 		    #rep = tf.cast(rep, 'int32') #removed
 		    x = tf.cast(x,tf.float32) #new
@@ -62,7 +62,7 @@ def bilinearSampler(im, grid, out_size):
 
     		# use indices to lookup pixels in the flat image and restore
     		# channels dim
-    		im_flat = tf.reshape(im, tf.pack([-1, channels]))
+    		im_flat = tf.reshape(im, tf.stack([-1, channels]))
     		im_flat = tf.cast(im_flat, 'float32')
     		Ia = tf.gather(im_flat, idx_a)
     		Ib = tf.gather(im_flat, idx_b)
@@ -79,4 +79,4 @@ def bilinearSampler(im, grid, out_size):
     		wc = tf.expand_dims(((x-x0_f) * (y1_f-y)), 1)
     		wd = tf.expand_dims(((x-x0_f) * (y-y0_f)), 1)
     		output = tf.add_n([wa*Ia, wb*Ib, wc*Ic, wd*Id])
-    		return tf.reshape(output, tf.pack([num_batch, out_height, out_width, channels]))
+    		return tf.reshape(output, tf.stack([num_batch, out_height, out_width, channels]))

@@ -120,26 +120,27 @@ def atan2_ocv(y, x):
     atan2_p7 = -0.04432655554792128 * (180 / np.pi)
 
     ax, ay = tf.abs(x), tf.abs(y)
-    c = tf.select(tf.greater_equal(ax, ay), tf.div(ay, ax + DBL_EPSILON),
-                  tf.div(ax, ay + DBL_EPSILON))
+    c = tf.where(tf.greater_equal(ax, ay), tf.div(ay, ax + DBL_EPSILON),
+                 tf.div(ax, ay + DBL_EPSILON))
     c2 = tf.square(c)
     angle = (((atan2_p7 * c2 + atan2_p5) * c2 + atan2_p3) * c2 + atan2_p1) * c
-    angle = tf.select(tf.greater_equal(ax, ay), angle, 90.0 - angle)
-    angle = tf.select(tf.less(x, 0.0), 180.0 - angle, angle)
-    angle = tf.select(tf.less(y, 0.0), 360.0 - angle, angle)
+    angle = tf.where(tf.greater_equal(ax, ay), angle, 90.0 - angle)
+    angle = tf.where(tf.less(x, 0.0), 180.0 - angle, angle)
+    angle = tf.where(tf.less(y, 0.0), 360.0 - angle, angle)
     return angle
 
 
 def normalize(tensor, a=0, b=1):
-    return tf.div(tf.mul(tf.sub(tensor, tf.reduce_min(tensor)), b - a),
-                  tf.sub(tf.reduce_max(tensor), tf.reduce_min(tensor)))
+    return tf.div(tf.multiply(tf.subtract(tensor, tf.reduce_min(tensor)),
+                              b - a),
+                  tf.subtract(tf.reduce_max(tensor), tf.reduce_min(tensor)))
 
 
 def cart_to_polar_ocv(x, y, angle_in_degrees=False):
     v = tf.sqrt(tf.add(tf.square(x), tf.square(y)))
     ang = atan2_ocv(y, x)
     scale = 1.0 if angle_in_degrees else np.pi / 180.0
-    return v, tf.mul(ang, scale)
+    return v, tf.multiply(ang, scale)
 
 
 def draw_hsv_ocv(flow, norm):
@@ -153,7 +154,7 @@ def draw_hsv_ocv(flow, norm):
     else:
         v = tf.clip_by_value(v / 50.0, 0.0, 1.0)
 
-    hsv = tf.pack([h, s, v], 3)
+    hsv = tf.stack([h, s, v], 3)
     rgb = tf.image.hsv_to_rgb(hsv) * 255
 
     return tf.cast(rgb, tf.uint8)

@@ -135,7 +135,7 @@ def augment(dataX, dataY, batchSize):
     # geo augmentation
     globalAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, True)
     localAffine = geoAugTransform(batchSize, 0.1, 0.1, 0.17, 0.9, 1.1, False)
-    globalLocalAffine = tf.batch_matmul(localAffine, globalAffine)
+    globalLocalAffine = tf.matmul(localAffine, globalAffine)
     frame0Geo = geoAug(frame0, globalAffine)  # resize here
     frame1Geo = geoAug(frame1, globalLocalAffine)  # resize here
 
@@ -153,7 +153,7 @@ def augment(dataX, dataY, batchSize):
     frame0photo = photoAug(frame0Geo, photoParam) - IMAGENET_MEAN_GRAY
     frame1photo = photoAug(frame1Geo, photoParam) - IMAGENET_MEAN_GRAY
 
-    dataX = tf.pack([frame0photo, frame1photo], axis=1)
+    dataX = tf.stack([frame0photo, frame1photo], axis=1)
     dataY = flowGeo
 
     return dataX, dataY

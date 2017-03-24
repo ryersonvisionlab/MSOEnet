@@ -65,7 +65,7 @@ class MSOEPyramid(object):
                                                           [None, 2, 256, 256,
                                                            1], name='images')
                     else:
-                        self.input_layer = tf.pack(input)
+                        self.input_layer = tf.stack(input)
 
                     """ Create pyramid """
                     self.output = self.build_pyramid('MSOEnet',
@@ -92,40 +92,36 @@ class MSOEPyramid(object):
             with tf.variable_scope('MSOE_conv1', reuse=True):
                 W_conv1 = tf.get_variable('weights')
 
-            # fetch weights for conv3
-            # with tf.variable_scope('conv3', reuse=True):
-            #     W_conv3 = tf.get_variable('weights')
-
             # fetch shared weights for gate conv1
             with tf.variable_scope('Gate_conv1', reuse=True):
                 gW_conv1 = tf.get_variable('weights')
 
             # graph loss
-            tf.scalar_summary('loss', self.loss)
+            tf.summary.scalar('loss', self.loss)
             self.average_val_loss = tf.placeholder(tf.float32)
-            tf.scalar_summary('val_loss', self.average_val_loss,
+            tf.summary.scalar('val_loss', self.average_val_loss,
                               collections=['val'])
 
             # visualize target and predicted flows
-            tf.image_summary('flow predicted norm',
+            tf.summary.image('flow predicted norm',
                              flow_to_colour('flow_visualization',
                                             self.output),
-                             max_images=1)
-            tf.image_summary('flow target norm',
+                             max_outputs=1)
+            tf.summary.image('flow target norm',
                              flow_to_colour('flow_visualization',
                                             self.target),
-                             max_images=1)
-            tf.image_summary('flow predicted',
+                             max_outputs=1)
+            tf.summary.image('flow predicted',
                              flow_to_colour('flow_visualization',
                                             self.output, norm=False),
-                             max_images=1)
-            tf.image_summary('flow target',
+                             max_outputs=1)
+            tf.summary.image('flow target',
                              flow_to_colour('flow_visualization',
                                             self.target, norm=False),
-                             max_images=1)
-            tf.image_summary('image',
+                             max_outputs=1)
+            tf.summary.image('image',
                              self.input_layer[0],
-                             max_images=5)
+                             max_outputs=5)
 
             # visualize filters
             viz0 = W_conv1[0, :, :, :, :]
@@ -138,42 +134,45 @@ class MSOEPyramid(object):
                                         viz0, 8, 4, norm=False)
             grid1 = put_kernels_on_grid('kernel_visualization',
                                         viz1, 8, 4, norm=False)
-            tf.image_summary('filter conv1 0 norm', grid0n)
-            tf.image_summary('filter conv1 1 norm', grid1n)
-            tf.image_summary('filter conv1 0', grid0)
-            tf.image_summary('filter conv1 1', grid1)
+            tf.summary.image('filter conv1 0 norm', grid0n)
+            tf.summary.image('filter conv1 1 norm', grid1n)
+            tf.summary.image('filter conv1 0', grid0)
+            tf.summary.image('filter conv1 1', grid1)
 
             viz0 = gW_conv1[0, :, :, :, :]
             grid0n = put_kernels_on_grid('gate_kernel_visualization_norm',
                                          viz0, 4, 1)
             grid0 = put_kernels_on_grid('gate_kernel_visualization',
                                         viz0, 4, 1, norm=False)
-            tf.image_summary('filter gate_conv1 0 norm', grid0n)
-            tf.image_summary('filter gate_conv1 0', grid0)
+            tf.summary.image('filter gate_conv1 0 norm', grid0n)
+            tf.summary.image('filter gate_conv1 0', grid0)
 
             # histogram of filters
             for i in range(32):
                 drange = tf.reduce_max(W_conv1[:, :, :, :, i]) - \
                          tf.reduce_min(W_conv1[:, :, :, :, i])
-                tf.scalar_summary('drange filter conv1 ' + str(i), drange)
-                tf.histogram_summary('histogram filter conv1 ' + str(i),
+                tf.summary.scalar('drange filter conv1 ' + str(i), drange)
+                tf.summary.histogram('histogram filter conv1 ' + str(i),
                                      W_conv1[:, :, :, :, i])
 
             # visualize gates
             for scale in range(self.user_config['num_scales']):
-                tf.image_summary('gate_' + str(scale),
+                tf.summary.image('gate_' + str(scale),
                                  self.gates[..., scale:scale+1],
-                                 max_images=1)
+                                 max_outputs=1)
+                tf.summary.image('input_' + str(scale),
+                                 self.inputs[scale],
+                                 max_outputs=1)
 
             # visualize queue usage
             data_queue = self.queue_runner
             data_queue_capacity = data_queue.batch_size * data_queue.n_threads
-            tf.scalar_summary('queue saturation',
+            tf.summary.scalar('queue saturation',
                               data_queue.queue.size() / data_queue_capacity)
 
             # merge summaries
-            self.summaries = tf.merge_all_summaries()
-            self.val_summaries = tf.merge_all_summaries(key='val')
+            self.summaries = tf.summary.merge_all()
+            self.val_summaries = tf.summary.merge_all(key='val')
 
     def build_pyramid(self, name, input_layer, reuse=None):
         with tf.get_default_graph().name_scope(name):
@@ -186,17 +185,20 @@ class MSOEPyramid(object):
             # initialize pyramid
             msoe_array = [initial_msoe]
             gate_array = [initial_gate]
+            inputs = [input_layer[:, 0]]
 
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
                 # big to small
-                spatial_stride = 2**scale
+                scaled_input_layer = input_layer if scale == 1 else small_input
 
                 # downsample data (batchx2xhxwx1)
                 small_input = blur_downsample3d('input_downsample_' +
                                                 str(scale),
-                                                input_layer, 5,
-                                                spatial_stride, sigma=2)
+                                                scaled_input_layer, 5, 2,
+                                                sigma=2)
+
+                inputs.append(small_input[:, 0])
 
                 # create MSOE and insert data (batchx1xhxwx64)
                 small_msoe = MSOE('MSOE_' + str(scale), small_input,
@@ -227,7 +229,8 @@ class MSOEPyramid(object):
 
             # for image summary visualization
             if name == 'train':
-                self.gates = gates[:, 0, :, :, :]
+                self.gates = gates[:, 0]
+                self.inputs = inputs
 
             # apply per-scale gating to msoe outputs
             gated_msoes = [gates[..., :1] * msoe_array[0]]
@@ -247,7 +250,7 @@ class MSOEPyramid(object):
             gated_msoe = tf.add_n(gated_msoes)
 
             # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
-            output = conv3d('conv3', gated_msoe, 1, 1, 2, reuse)
+            output = conv3d('MSOE_conv3', gated_msoe, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
@@ -272,17 +275,16 @@ class MSOEPyramid(object):
             """
             Train over iterations, printing loss at each one
             """
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(max_to_keep=0, pad_step_number=16)
             with tf.Session(config=self.tf_config) as sess:
 
                 # check snapshots
                 resume, start_iteration = check_snapshots()
 
                 # start summary writers
-                summary_writer = tf.train.SummaryWriter('logs/train',
-                                                        sess.graph)
-                summary_writer_val = tf.train.SummaryWriter('logs/val')
+                summary_writer = tf.summary.FileWriter('logs/train',
+                                                       sess.graph)
+                summary_writer_val = tf.summary.FileWriter('logs/val')
 
                 # start the tensorflow QueueRunners
                 tf.train.start_queue_runners(sess=sess)
@@ -293,7 +295,7 @@ class MSOEPyramid(object):
                 if resume:
                     saver.restore(sess, resume)
                 else:
-                    sess.run(tf.initialize_all_variables())
+                    sess.run(tf.global_variables_initializer())
 
                 last_print = time.time()
                 for i in range(start_iteration, iterations):
@@ -330,8 +332,7 @@ class MSOEPyramid(object):
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:
                         print 'Saving snapshot...'
-                        saver.save(sess, 'snapshots/iter_' +
-                                   str(i + 1).zfill(16) + '.ckpt')
+                        saver.save(sess, 'snapshots/iter', global_step=i+1)
 
     def validate_chunks(self, sess):
         batch_size = self.user_config['batch_size']
@@ -339,6 +340,7 @@ class MSOEPyramid(object):
         num_val = self.val_input_layer.shape[0]
         num_chunks = num_val / batch_size
 
+        # TODO: cover case for when num_val not divisible by batch_size
         for j in range(num_chunks):
             start = batch_size * j
             end = start + batch_size
@@ -360,8 +362,7 @@ class MSOEPyramid(object):
     def run_test(self):
         with self.graph.as_default():
             # TODO: switch to tf.train.import_meta_graph
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(max_to_keep=0)
             with tf.Session(config=self.tf_config) as sess:
                 # load model
                 model = check_snapshots(folder='final_model', train=False)
@@ -372,8 +373,7 @@ class MSOEPyramid(object):
 
     def save_model(self):
         with self.graph.as_default():
-            saver = tf.train.Saver(max_to_keep=0,
-                                   write_version=tf.train.SaverDef.V2)
+            saver = tf.train.Saver(max_to_keep=0)
             with tf.Session(config=self.tf_config) as sess:
                 # load model
                 model = check_snapshots(train=False)

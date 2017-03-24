@@ -11,12 +11,11 @@ class GatingNetwork(object):
             """
             Construct the gating network graph structure
             """
-            # first convolution (1x5x5x1x4)
-            conv1 = conv3d('Gate_conv1', input[:, :1], 5, 1, 4, reuse)
-
+            # first convolution (1x11x11x1x4)
+            conv1 = conv3d('Gate_conv1', input[:, :1], 11, 1, 4, reuse)
             # activation
             h_conv1 = eltwise_square('square', conv1)
-
+            # decode to final gate output
             gate_output = conv3d('Gate_conv2', h_conv1, 1, 1, 1, reuse)
 
             self.output = gate_output

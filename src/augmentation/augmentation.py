@@ -11,14 +11,14 @@ def geoAug(image,transform,size=None):
 		height = imshape[1]
 		width = imshape[2]
 		if size:
-			outshape = tf.pack([size[0], size[1]])
+			outshape = tf.stack([size[0], size[1]])
 		else:
-			outshape = tf.pack([height,width])
+			outshape = tf.stack([height,width])
 
 		theta = tf.slice(transform,[0,0,0],[-1,2,-1])
 
 		identityGrid = meshGridFlat(batchSize,height,width)
-		transformGrid = tf.batch_matmul(theta,identityGrid)
+		transformGrid = tf.matmul(theta,identityGrid)
 
 		out = bilinearSampler(image,transformGrid,outshape)
 		return tf.reshape(out,image.get_shape())
@@ -68,20 +68,20 @@ def geoAugTransform(batchSize,translateXMax,translateYMax,rotateMax,scaleMin,sca
 		zeros = tf.zeros([batchSize,1,1])
 		ones = tf.ones([batchSize,1,1])
 
-		r1 = tf.concat(2,[cosComponent,-sinComponent,translateX])
-		r2 = tf.concat(2,[sinComponent,cosComponent,translateY])
-		r3 = tf.concat(2,[zeros,zeros,ones])
+		r1 = tf.concat(axis=2,values=[cosComponent,-sinComponent,translateX])
+		r2 = tf.concat(axis=2,values=[sinComponent,cosComponent,translateY])
+		r3 = tf.concat(axis=2,values=[zeros,zeros,ones])
 
-		translateRotateMatrix = tf.concat(1,[r1,r2,r3])
+		translateRotateMatrix = tf.concat(axis=1,values=[r1,r2,r3])
 
 		#build scaling and flipping matrix
-		r1 = tf.concat(2,[scaleX,zeros,zeros])
-		r2 = tf.concat(2,[zeros,scaleY,zeros])
-		r3 = tf.concat(2,[zeros,zeros,ones])
+		r1 = tf.concat(axis=2,values=[scaleX,zeros,zeros])
+		r2 = tf.concat(axis=2,values=[zeros,scaleY,zeros])
+		r3 = tf.concat(axis=2,values=[zeros,zeros,ones])
 
-		scalingMatrix = tf.concat(1,[r1,r2,r3])
+		scalingMatrix = tf.concat(axis=1,values=[r1,r2,r3])
 
-		return tf.batch_matmul(translateRotateMatrix,scalingMatrix)
+		return tf.matmul(translateRotateMatrix,scalingMatrix)
 
 
 def geoAugFlow(flow,transform1,transform2):
@@ -101,8 +101,8 @@ def geoAugFlow(flow,transform1,transform2):
 		grid1 = flowTransformGrid(flow)
 
 		#post transform grid
-		grid0 = tf.batch_matmul(transform1,grid0)
-		grid1 = tf.batch_matmul(transform2,grid1)
+		grid0 = tf.matmul(transform1,grid0)
+		grid1 = tf.matmul(transform2,grid1)
 
 		#scale back to pixel space
 		grid0 = (grid0[:,0:2,:]+1)*postScale
