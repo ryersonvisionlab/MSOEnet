@@ -92,10 +92,6 @@ class MSOEPyramid(object):
             with tf.variable_scope('MSOE_conv1', reuse=True):
                 W_conv1 = tf.get_variable('weights')
 
-            # fetch weights for conv3
-            # with tf.variable_scope('conv3', reuse=True):
-            #     W_conv3 = tf.get_variable('weights')
-
             # fetch shared weights for gate conv1
             with tf.variable_scope('Gate_conv1', reuse=True):
                 gW_conv1 = tf.get_variable('weights')
@@ -194,13 +190,13 @@ class MSOEPyramid(object):
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
                 # big to small
-                spatial_stride = 2**scale
+                scaled_input_layer = input_layer if scale == 1 else small_input
 
                 # downsample data (batchx2xhxwx1)
                 small_input = blur_downsample3d('input_downsample_' +
                                                 str(scale),
-                                                input_layer, 5,
-                                                spatial_stride, sigma=2)
+                                                scaled_input_layer, 5, 2,
+                                                sigma=2)
 
                 inputs.append(small_input[:, 0])
 
@@ -254,7 +250,7 @@ class MSOEPyramid(object):
             gated_msoe = tf.add_n(gated_msoes)
 
             # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
-            output = conv3d('conv3', gated_msoe, 1, 1, 2, reuse)
+            output = conv3d('MSOE_conv3', gated_msoe, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
