@@ -301,6 +301,10 @@ class MSOEmultiscale(object):
                         # prevent out of memory issues
                         assert batch_size < num_validation
                         num_chunks = num_validation / batch_size
+<<<<<<< HEAD
+=======
+                        val_loss = 0
+>>>>>>> 185af0379b4b9798e4bf5568d0f5a933f44ef811
                         for j in range(num_chunks):
                             print 'Validating chunk ' + str(j)
                             start = j*batch_size
