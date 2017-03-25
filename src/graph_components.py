@@ -14,13 +14,11 @@ def data_layer(name, train_filename, batch_size, num_threads):
 
         # get training and validation data
         with tf.device("/cpu:0"):
-            input_shape = X_val.shape[1:]
-            target_shape = y_val.shape[1:]
+            input_shape = list(X_val.shape[1:])
+            target_shape = list(y_val.shape[1:])
             queue_runner = QueueRunner(d, input_shape, target_shape,
                                        batch_size, num_threads)
             X, y = queue_runner.get_inputs()
-            X_val = tf.stack(X_val)
-            y_val = tf.stack(y_val)
 
         data = {'train': {'input': X, 'target': y},
                 'validation': {'input': X_val, 'target': y_val},
@@ -57,7 +55,7 @@ def conv3d(name, input_layer, kernel_spatial_size,
                                      initializer=tf.constant_initializer(0.0))
 
             # weight decay
-            if name == 'MSOE_conv1':
+            if name == 'MSOEnet_conv1':
                 reg = 0.5 * tf.nn.l2_loss(weights) * 4e-10
                 tf.add_to_collection('weight_regs', reg)
 

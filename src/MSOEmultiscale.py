@@ -164,8 +164,8 @@ class MSOEmultiscale(object):
                 inputs.append(small_input[:, 0])
 
                 # create MSOE and insert data (batchx1xhxwx64)
-                small_msoe = MSOE('MSOEnet_' + str(scale), small_input,
-                                  reuse=True).output
+                small_msoe = MSOEnet('MSOEnet_' + str(scale), small_input,
+                                     reuse=True).output
 
                 # create GatingNetwork and insert data (batchx1xhxwx1)
                 small_gate = GatingNetwork('Gate_' + str(scale), small_input,
@@ -287,16 +287,21 @@ class MSOEmultiscale(object):
 
                     # print validation information
                     if (i + 1) % validation_frequency == 0:
-                        pass
                         # retrieve validation data
-                        # val_input = sess.run(self.data['validation']['input'])
-                        # val_target = sess.run(self.data['validation']
-                        #                       ['target'])
-                        # print 'Validating ' + str(val_target.shape[0]) + \
-                        #     ' examples...'
-                        #
-                        # # breaking up large validation data into chunks to
-                        # # prevent out of memory issues
+                        val_input = self.data['validation']['input']
+                        val_target = self.data['validation']['target']
+                        print 'Validating ' + str(val_target.shape[0]) + \
+                            ' examples...'
+
+                        for i in range(val_target.shape[0]):
+                            result = sess.run(self.val_loss,
+                                              feed_dict={
+                                                self.input: val_input,
+                                                self.target: val_target})
+                            print str(i) + ' ' + str(result)
+
+                        # breaking up large validation data into chunks to
+                        # prevent out of memory issues
                         # avg_val_loss, val_summary = self.validate_chunks(sess)
                         #
                         # print 'Validation loss: %f' % (avg_val_loss)

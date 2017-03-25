@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from src.utilities import *
 
 
 class DataSet(object):
@@ -119,13 +120,13 @@ def load_FlyingChairs(data_dir):
                 train_sequences.append({
                     'prefix': data_dir,
                     'image_names': [img1_name, img2_name],
-                    'flow_name': [flo_name]
+                    'flow_name': flo_name
                 })
             elif split == '2':
                 validation_sequences.append({
                     'prefix': data_dir,
                     'image_names': [img1_name, img2_name],
-                    'flow_name': [flo_name]
+                    'flow_name': flo_name
                 })
         count += 3
 
