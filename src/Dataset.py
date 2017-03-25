@@ -28,7 +28,7 @@ class DataSet(object):
             # Read flo file
             flow = readFlowFile(prefix + flow_name)
             flow[:, :, 1] *= -1  # fy is in opposite direction, must flip
-                                   # EpicFlow problems.
+                                 # EpicFlow problems.
 
             # package images as data points and provide the ground truth flow
             packaged_images.append(images)
@@ -61,7 +61,7 @@ class DataSet(object):
             # Read flo file
             flow = readFlowFile(prefix + flow_name)
             flow[:, :, 1] *= -1  # fy is in opposite direction, must flip
-                                   # EpicFlow problems.
+                                 # EpicFlow problems.
 
             # package images as data points and provide the ground truth flow
             packaged_images.append(images)
@@ -73,7 +73,7 @@ class DataSet(object):
         if self._index_in_epoch > self._num_examples:
             self._epochs_completed += 1
             # start next epoch
-            self._index_in_epoch = self._index_in_epoch - self._num_examples
+            self._index_in_epoch -= self._num_examples
 
         # wrap in numpy array (easier to work with)
         packaged_images = np.array(packaged_images)

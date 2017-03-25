@@ -262,7 +262,7 @@ class MSOEmultiscale(object):
                     # retrieve training data
                     input = sess.run(self.data['train']['input'])
                     target = sess.run(self.data['train']['target'])
-                    
+
                     # run a train step
                     results = sess.run([train_step,
                                         self.train_loss,
@@ -290,21 +290,42 @@ class MSOEmultiscale(object):
                         # retrieve validation data
                         val_input = self.data['validation']['input']
                         val_target = self.data['validation']['target']
-                        print 'Validating ' + str(val_target.shape[0]) + \
-                            ' examples...'
 
-                        for i in range(val_target.shape[0]):
-                            result = sess.run(self.val_loss,
-                                              feed_dict={
-                                                self.input: val_input,
-                                                self.target: val_target})
-                            print str(i) + ' ' + str(result)
+                        num_validation = val_target.shape[0]
+                        batch_size = self.user_config['batch_size']
+
+                        print 'Validating ' + str(num_validation) + \
+                            ' examples...'
 
                         # breaking up large validation data into chunks to
                         # prevent out of memory issues
-                        # avg_val_loss, val_summary = self.validate_chunks(sess)
-                        #
-                        # print 'Validation loss: %f' % (avg_val_loss)
+                        assert batch_size < num_validation
+                        num_chunks = num_validation / batch_size
+                        for j in range(num_chunks):
+                            print 'Validating chunk ' + str(j)
+                            start = j*batch_size
+                            end = (j+1)*batch_size
+                            val_loss += sess.run(self.val_loss,
+                                                 feed_dict={
+                                                   self.input:
+                                                   val_input[start:end],
+                                                   self.target:
+                                                   val_target[start:end]})
+
+                        # evaluate the rest (if there are any)
+                        if num_validation % batch_size != 0:
+                            print 'Validating the rest'
+                            start = num_chunks*batch_size
+                            val_loss += sess.run(self.val_loss,
+                                                 feed_dict={
+                                                   self.input:
+                                                   val_input[start:],
+                                                   self.target:
+                                                   val_target[start:]})
+
+                        val_loss /= num_validation
+
+                        print 'Validation loss: %f' % (val_loss)
                         # summary_writer.add_summary(val_summary, i + 1)
                         # summary_writer.flush()
 
