@@ -2,20 +2,21 @@ import os
 import numpy as np
 import cv2
 import tensorflow as tf
-import skimage.io
+from scipy.misc import imread
 
 
 def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])  # MATLAB style
 
 
+# TODO: test usefulness of imagenet mean subtraction
 def load_image(path, mean_sub=True):
     IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
                              dtype='float32').reshape((1, 1, 3))  # RGB
     IMAGENET_MEAN_GRAY = rgb2gray(IMAGENET_MEAN).astype('float32')
     if mean_sub is False:
         IMAGENET_MEAN_GRAY = 0.0
-    rgb = skimage.io.imread(path)  # RGB [0, 255]
+    rgb = imread(path)  # RGB [0, 255]
     gray = rgb2gray(rgb).astype('float32')  # grayscale [0, 255]
     gray_subtracted = gray - IMAGENET_MEAN_GRAY
     gray_scaled = gray_subtracted / 255.0
@@ -29,11 +30,12 @@ def readFlowFile(filename):
     According to the c++ source code of Daniel Scharstein
     Contact: schar@middlebury.edu
 
-    Author: Deqing Sun, Department of Computer Science, Brown University
+    According to the MATLAB source code of Deqing Sun
     Contact: dqsun@cs.brown.edu
-    Date: 2007-10-31 16:45:40 (Wed, 31 Oct 2006)
-
     Copyright 2007, Deqing Sun.
+
+    Ported over to Python by Matthew Tesfaldet.
+    Copyright 2017, Matthew Tesfaldet.
 
                         All Rights Reserved
 
@@ -240,3 +242,13 @@ def load_graph(frozen_graph_filename, name=None, input_map=None):
             producer_op_list=None
         )
     return graph
+
+
+def get_immediate_subdirectories(a_dir):
+    return sorted([os.path.join(a_dir, name) for name in os.listdir(a_dir)
+                   if os.path.isdir(os.path.join(a_dir, name))])
+
+
+def get_immediate_subfiles(a_dir):
+    return sorted([os.path.join(a_dir, name) for name in os.listdir(a_dir)
+                   if os.path.isfile(os.path.join(a_dir, name))])

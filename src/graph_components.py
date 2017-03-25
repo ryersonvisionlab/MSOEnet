@@ -1,25 +1,32 @@
 import tensorflow as tf
-from src.dataset import *
-from src.util import draw_hsv_ocv, gauss2d_kernel
+from src.Dataset import load_FlyingChairs
+from src.QueueRunner import QueueRunner
+from src.utilities import draw_hsv_ocv, gauss2d_kernel
 
 
-def data_layer(name, path, batch_size, temporal_extent, num_threads):
+def data_layer(name, train_filename, batch_size, num_threads):
     with tf.get_default_graph().name_scope(name):
-        # read image sequences with ground truth flows
-        d = load_FlyingChairs(path)
+        # load dataset
+        d = load_FlyingChairs(train_filename)
 
         # read validation data
-        x_val, y_val_ = d.validation_data()
+        X_val, y_val = d.validation_data()
 
-        input_shape = x_val.shape[1:]
-        target_shape = y_val_.shape[1:]
-
+        # get training and validation data
         with tf.device("/cpu:0"):
+            input_shape = X_val.shape[1:]
+            target_shape = y_val.shape[1:]
             queue_runner = QueueRunner(d, input_shape, target_shape,
                                        batch_size, num_threads)
-            x, y_ = queue_runner.get_inputs()
+            X, y = queue_runner.get_inputs()
+            X_val = tf.stack(X_val)
+            y_val = tf.stack(y_val)
 
-        return x, y_, x_val, y_val_, queue_runner
+        data = {'train': {'input': X, 'target': y},
+                'validation': {'input': X_val, 'target': y_val},
+                'queue_runner': queue_runner}
+
+        return data, input_shape, target_shape
 
 
 def conv3d(name, input_layer, kernel_spatial_size,

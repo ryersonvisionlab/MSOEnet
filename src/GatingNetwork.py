@@ -1,5 +1,5 @@
 import tensorflow as tf
-from components import *
+from src.graph_components import *
 
 
 class GatingNetwork(object):
