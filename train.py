@@ -9,11 +9,11 @@ config_proto.log_device_placement = False
 # config.intra_op_parallelism_threads = 1
 my_config = {}
 my_config['train_filename'] = \
-    '/media/ssd3/mtesfald/FlyingChairs/FlyingChairs_release/data'
+    '/home/mtesfald/Datasets/FlyingChairs/FlyingChairs_release/data'
 my_config['batch_size'] = 4
 my_config['iterations'] = 600000
 my_config['snapshot_frequency'] = 10000
-my_config['print_frequency'] = 10
+my_config['print_frequency'] = 1
 my_config['validation_frequency'] = 50
 my_config['lr'] = 1.2e-2
 my_config['num_threads'] = 6
