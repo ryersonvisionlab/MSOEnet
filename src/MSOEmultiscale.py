@@ -262,7 +262,7 @@ class MSOEmultiscale(object):
                     # retrieve training data
                     input = sess.run(self.data['train']['input'])
                     target = sess.run(self.data['train']['target'])
-
+                    
                     # run a train step
                     results = sess.run([train_step,
                                         self.train_loss,

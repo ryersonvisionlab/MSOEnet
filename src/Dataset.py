@@ -48,7 +48,7 @@ class DataSet(object):
 
         packaged_images = []
         packaged_flows = []
-        for sequence in self._validation:
+        for sequence in sequences:
             # getting file paths
             img_names = sequence['image_names']
             flow_name = sequence['flow_name']
