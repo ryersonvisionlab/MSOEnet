@@ -292,43 +292,25 @@ class MSOEmultiscale(object):
                         val_target = self.data['validation']['target']
 
                         num_validation = val_target.shape[0]
-                        batch_size = self.user_config['batch_size']
 
                         print 'Validating ' + str(num_validation) + \
                             ' examples...'
 
-                        # breaking up large validation data into chunks to
-                        # prevent out of memory issues
-                        assert batch_size < num_validation
-                        num_chunks = num_validation / batch_size
                         val_loss = 0
-                        for j in range(num_chunks):
-                            print 'Validating chunk ' + str(j)
-                            start = j*batch_size
-                            end = (j+1)*batch_size
-                            val_loss += sess.run(self.val_loss,
-                                                 feed_dict={
-                                                   self.input:
-                                                   val_input[start:end],
-                                                   self.target:
-                                                   val_target[start:end]})
-
-                        # evaluate the rest (if there are any)
-                        if num_validation % batch_size != 0:
-                            print 'Validating the rest'
-                            start = num_chunks*batch_size
-                            val_loss += sess.run(self.val_loss,
-                                                 feed_dict={
-                                                   self.input:
-                                                   val_input[start:],
-                                                   self.target:
-                                                   val_target[start:]})
-
+                        for j in range(num_validation):
+                            loss = sess.run(self.val_loss,
+                                            feed_dict={
+                                              self.input:
+                                              val_input[j:j+1],
+                                              self.target:
+                                              val_target[j:j+1]})
+                            val_loss += loss
                         val_loss /= num_validation
 
                         print 'Validation loss: %f' % (val_loss)
-                        # summary_writer.add_summary(val_summary, i + 1)
-                        # summary_writer.flush()
+                        val_summary = tf.summary.scalar('validation loss', tf.pack(val_loss))
+                        summary_writer.add_summary(val_summary, i + 1)
+                        summary_writer.flush()
 
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:
