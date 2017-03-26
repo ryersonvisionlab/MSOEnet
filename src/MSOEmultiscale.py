@@ -57,7 +57,10 @@ class MSOEmultiscale(object):
         with tf.name_scope(name):
             # graph losses
             tf.summary.scalar('training loss', self.train_loss)
-            tf.summary.scalar('validation loss', self.val_loss)
+            self.val_loss_placeholder = tf.placeholder(tf.float32)
+            self.val_summary = tf.summary.scalar('validation loss',
+                                                 self.val_loss_placeholder,
+                                                 collections=['val'])
 
             # fetch shared weights for MSOEnet conv1
             with tf.variable_scope('MSOEnet_conv1', reuse=True):
@@ -70,23 +73,23 @@ class MSOEmultiscale(object):
             # visualize target and predicted flows
             tf.summary.image('flow predicted (normalized)',
                              flow_to_colour('flow_visualization',
-                                            self.output),
+                                            self.output[0:1]),
                              max_outputs=1)
             tf.summary.image('flow target (normalized)',
                              flow_to_colour('flow_visualization',
-                                            self.target),
+                                            self.target[0:1]),
                              max_outputs=1)
             tf.summary.image('flow predicted (clipped)',
                              flow_to_colour('flow_visualization',
-                                            self.output, norm=False),
+                                            self.output[0:1], norm=False),
                              max_outputs=1)
             tf.summary.image('flow target (clipped)',
                              flow_to_colour('flow_visualization',
-                                            self.target, norm=False),
+                                            self.target[0:1], norm=False),
                              max_outputs=1)
 
             # visualize input images
-            tf.summary.image('image', self.input[0], max_outputs=5)
+            tf.summary.image('image', self.input[0], max_outputs=2)
 
             # visualize filters
             viz0 = W_conv1[0, :, :, :, :]  # kernels for frame 1
@@ -260,8 +263,10 @@ class MSOEmultiscale(object):
                 last_print = time.time()
                 for i in range(start_iteration, iterations):
                     # retrieve training data
-                    input = sess.run(self.data['train']['input'])
-                    target = sess.run(self.data['train']['target'])
+                    data = sess.run([self.data['train']['input'],
+                                     self.data['train']['target']])
+                    input = data[0]
+                    target = data[1]
 
                     # run a train step
                     results = sess.run([train_step,
@@ -292,24 +297,46 @@ class MSOEmultiscale(object):
                         val_target = self.data['validation']['target']
 
                         num_validation = val_target.shape[0]
+                        batch_size = self.user_config['batch_size']
 
                         print 'Validating ' + str(num_validation) + \
                             ' examples...'
-
+                        
+                        # breaking up large validation data into chunks
+                        # to evaluate separately
+                        assert batch_size < num_validation
+                        num_chunks = num_validation / batch_size
                         val_loss = 0
-                        for j in range(num_validation):
+                        for j in range(num_chunks):
+                            start = j*batch_size
+                            end = (j+1)*batch_size
                             loss = sess.run(self.val_loss,
                                             feed_dict={
                                               self.input:
-                                              val_input[j:j+1],
+                                              val_input[start:end],
                                               self.target:
-                                              val_target[j:j+1]})
+                                              val_target[start:end]})
                             val_loss += loss
-                        val_loss /= num_validation
+
+                        # evaluate the rest (if there are any)
+                        if num_validation % batch_size != 0:
+                            start = num_chunks*batch_size
+                            val_loss += sess.run(self.val_loss,
+                                                 feed_dict={
+                                                   self.input:
+                                                   val_input[start:],
+                                                   self.target:
+                                                   val_target[start:]})
+                            val_loss /= num_chunks + 1
+                        else:
+                            val_loss /= num_chunks
 
                         print 'Validation loss: %f' % (val_loss)
-                        val_summary = tf.summary.scalar('validation loss', tf.pack(val_loss))
-                        summary_writer.add_summary(val_summary, i + 1)
+                        
+                        summary = sess.run(self.val_summary,
+                                           feed_dict={
+                                             self.val_loss_placeholder: val_loss})
+                        summary_writer.add_summary(summary, i + 1)
                         summary_writer.flush()
 
                     # save snapshot

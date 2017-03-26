@@ -4,7 +4,6 @@ import cv2
 import tensorflow as tf
 from scipy.misc import imread
 
-
 def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])  # MATLAB style
 
@@ -207,14 +206,10 @@ def check_snapshots(folder='snapshots/', train=True):
                         if file == '.gitignore':
                             continue
                         os.remove(snapshots_folder + file)
-                    for file in os.listdir(logs_folder + 'train/'):
+                    for file in os.listdir(logs_folder):
                         if file == '.gitignore':
                             continue
-                        os.remove(logs_folder + 'train/' + file)
-                    for file in os.listdir(logs_folder + 'val/'):
-                        if file == '.gitignore':
-                            continue
-                        os.remove(logs_folder + 'val/' + file)
+                        os.remove(logs_folder + file)
         else:
             print "No snapshots found, training from scratch"
 
