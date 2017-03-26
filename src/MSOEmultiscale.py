@@ -231,6 +231,7 @@ class MSOEmultiscale(object):
         snapshot_frequency = self.user_config['snapshot_frequency']
         print_frequency = self.user_config['print_frequency']
         validation_frequency = self.user_config['validation_frequency']
+        run_id = self.user_config['run_id']
 
         with self.graph.as_default():
             with tf.device('/gpu:' + str(self.user_config['gpu'])):
@@ -244,10 +245,10 @@ class MSOEmultiscale(object):
             with tf.Session(config=self.tf_config) as sess:
 
                 # check snapshots
-                resume, start_iteration = check_snapshots()
+                resume, start_iteration = check_snapshots(run_id)
 
                 # start summary writers
-                summary_writer = tf.summary.FileWriter('logs', sess.graph)
+                summary_writer = tf.summary.FileWriter('logs/' + run_id, sess.graph)
 
                 # start the tensorflow QueueRunners
                 tf.train.start_queue_runners(sess=sess)
@@ -342,7 +343,12 @@ class MSOEmultiscale(object):
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:
                         print 'Saving snapshot...'
-                        saver.save(sess, 'snapshots/iter', global_step=i+1)
+                        try:
+                            os.makedirs('snapshots/' + run_id)
+                        except OSError:
+                            if not os.path.isdir('snapshots/' + run_id):
+                                raise
+                        saver.save(sess, 'snapshots/' + run_id + '/iter', global_step=i+1)
 
     # TODO: revisit this code
     def run_test(self):
