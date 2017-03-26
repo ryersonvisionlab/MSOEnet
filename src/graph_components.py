@@ -138,6 +138,7 @@ def epe(name, input_layer, target):
 
 def epe_speedsegmented(name, input_layer, target, num_segments):
     with tf.get_default_graph().name_scope(name):
+        speed = tf.sqrt(target[..., 0]**2 + target[..., 1]**2)
         losses = []
         for i in range(num_segments):
             if i == 0:
@@ -149,10 +150,11 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
             else:
                 start = 2**(i-1)
                 end = 2**i
-            mask = tf.logical_and(tf.greater_equal(target, start),
-                                  tf.less(target, end))
-            target_masked = tf.boolean_mask(target, mask)
-            input_masked = tf.boolean_mask(input_layer, mask)
+            mask = tf.to_float(tf.logical_and(tf.greater_equal(speed, start),
+                                              tf.less(speed, end)))
+            mask = tf.expand_dims(mask, axis=-1)
+            target_masked = target * mask
+            input_masked = input_layer * mask
             loss = epe('epe_segment_' + str(i), input_masked,
                        target_masked)
             losses.append(loss)

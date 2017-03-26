@@ -315,38 +315,46 @@ class MSOEmultiscale(object):
 
                         print 'Validating ' + str(num_validation) + \
                             ' examples...'
-                        
+
                         # breaking up large validation data into chunks
                         # to evaluate separately
                         assert batch_size < num_validation
                         num_chunks = num_validation / batch_size
                         val_epe = 0
+                        val_epes_segmented = np.zeros(5)
                         for j in range(num_chunks):
                             start = j*batch_size
                             end = (j+1)*batch_size
-                            epe = sess.run(self.val_epe,
-                                           feed_dict={
-                                             self.input:
-                                             val_input[start:end],
-                                             self.target:
-                                             val_target[start:end]})
-                            val_epe += epe
+                            results = sess.run([self.val_epe] +
+                                               self.val_epes_segmented,
+                                               feed_dict={
+                                                   self.input:
+                                                   val_input[start:end],
+                                                   self.target:
+                                                   val_target[start:end]})
+                            val_epe += results[0]
+                            val_epes_segmented += results[1:]
 
                         # evaluate the rest (if there are any)
                         if num_validation % batch_size != 0:
                             start = num_chunks*batch_size
-                            val_epe += sess.run(self.val_epe,
-                                                feed_dict={
-                                                  self.input:
-                                                  val_input[start:],
-                                                  self.target:
-                                                  val_target[start:]})
+                            results = sess.run([self.val_epe] +
+                                               val_epes_segmented,
+                                               feed_dict={
+                                                   self.input:
+                                                   val_input[start:],
+                                                   self.target:
+                                                   val_target[start:]})
+                            val_epe += results[0]
+                            val_epes_segmented += results[1:]
                             val_epe /= num_chunks + 1
+                            val_epes_segmented /= num_chunks + 1
                         else:
                             val_epe /= num_chunks
+                            val_epes_segmented /= num_chunks
 
                         print 'Validation epe: %f' % (val_epe)
-                        
+
                         summary = sess.run(self.val_epe_summary,
                                            feed_dict={
                                              self.val_epe_placeholder: val_epe})
@@ -354,36 +362,15 @@ class MSOEmultiscale(object):
                         summary_writer.flush()
 
                         for s in range(5):
-                            val_epe = 0
-                            for j in range(num_chunks):
-                                start = j*batch_size
-                                end = (j+1)*batch_size
-                                epe = sess.run(self.val_epes_segmented[s],
-                                               feed_dict={
-                                                 self.input:
-                                                 val_input[start:end],
-                                                 self.target:
-                                                 val_target[start:end]})
-                                val_epe += epe
-
-                            # evaluate the rest (if there are any)
-                            if num_validation % batch_size != 0:
-                                start = num_chunks*batch_size
-                                val_epe += sess.run(self.val_epes_segmented[s],
-                                                    feed_dict={
-                                                      self.input:
-                                                      val_input[start:],
-                                                      self.target:
-                                                      val_target[start:]})
-                                val_epe /= num_chunks + 1
-                            else:
-                                val_epe /= num_chunks
-
-                            val_epe_summary = self.val_epe_segmented_summaries[s]['summary']
-                            placeholder = self.val_epe_segmented_summaries[s]['placeholder']
-                            summary = sess.run(val_epe_summary,
-                                               feed_dict={placeholder: val_epe})
-                            summary_writer.add_summary(summary, i+1)
+                            val_epe_summary = \
+                                self.val_epe_segmented_summaries[s]['summary']
+                            placeholder = \
+                                self.val_epe_segmented_summaries[s]['placeholder']
+                            summary = \
+                                sess.run(val_epe_summary,
+                                         feed_dict={placeholder:
+                                                    val_epes_segmented[s]})
+                            summary_writer.add_summary(summary, i + 1)
                             summary_writer.flush()
 
                     # save snapshot
