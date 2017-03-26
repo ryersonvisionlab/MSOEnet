@@ -50,7 +50,7 @@ class MSOEmultiscale(object):
                     epe('validation_epe', self.output, self.target)
 
                 # attach loss segmented by speeds (for validation)
-                self.val_epes_segmented = \
+                self.segmented_val_epes = \
                     epe_speedsegmented('validation_epe_segmented',
                                        self.output, self.target, 5)
 
@@ -72,7 +72,7 @@ class MSOEmultiscale(object):
                 self.val_epe_segmented_summaries.append({
                     'placeholder': placeholder,
                     'summary': tf.summary.scalar('validation epe segment ' + str(i),
-                                                 placeholder,
+                                                 self.segmented_val_epes[i],
                                                  collections=['val'])})
 
             # fetch shared weights for MSOEnet conv1
@@ -352,39 +352,6 @@ class MSOEmultiscale(object):
                                              self.val_epe_placeholder: val_epe})
                         summary_writer.add_summary(summary, i + 1)
                         summary_writer.flush()
-
-                        for s in range(5):
-                            val_epe = 0
-                            for j in range(num_chunks):
-                                start = j*batch_size
-                                end = (j+1)*batch_size
-                                epe = sess.run(self.val_epes_segmented[s],
-                                               feed_dict={
-                                                 self.input:
-                                                 val_input[start:end],
-                                                 self.target:
-                                                 val_target[start:end]})
-                                val_epe += epe
-
-                            # evaluate the rest (if there are any)
-                            if num_validation % batch_size != 0:
-                                start = num_chunks*batch_size
-                                val_epe += sess.run(self.val_epes_segmented[s],
-                                                    feed_dict={
-                                                      self.input:
-                                                      val_input[start:],
-                                                      self.target:
-                                                      val_target[start:]})
-                                val_epe /= num_chunks + 1
-                            else:
-                                val_epe /= num_chunks
-
-                            val_epe_summary = self.val_epe_segmented_summaries[s]['summary']
-                            placeholder = self.val_epe_segmented_summaries[s]['placeholder']
-                            summary = sess.run(val_epe_summary,
-                                               feed_dict={placeholder: val_epe})
-                            summary_writer.add_summary(summary, i+1)
-                            summary_writer.flush()
 
                     # save snapshot
                     if (i + 1) % snapshot_frequency == 0:

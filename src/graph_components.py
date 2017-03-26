@@ -122,15 +122,41 @@ def l1_normalize(name, input_layer, axis=4, eps=1e-12):
         return tf.multiply(input_layer, input_layer_inv_norm)
 
 
-def l2_loss(name, input_layer, target):
+def squared_epe(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
-        loss = tf.reduce_sum(tf.square(tf.subtract(input_layer, target)))
-        return loss / tf.to_float(tf.size(input_layer))
+        loss = (input_layer[..., 0] - target[..., 0])**2 + \
+               (input_layer[..., 1] - target[..., 1])**2
+        return tf.reduce_mean(loss)
 
 
-def l1_loss(name, input_layer, target):
+def epe(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
-        return tf.reduce_mean(tf.abs(tf.subtract(input_layer, target)))
+        loss = tf.sqrt((input_layer[..., 0] - target[..., 0])**2 + \
+                       (input_layer[..., 1] - target[..., 1])**2)
+        return tf.reduce_mean(loss)
+
+
+def epe_speedsegmented(name, input_layer, target, num_segments):
+    with tf.get_default_graph().name_scope(name):
+        losses = []
+        for i in range(num_segments):
+            if i == 0:
+                start = 0
+                end = 1
+            elif i == num_segments - 1:
+                start = 2**(i-1)
+                end = 2**31 - 1
+            else:
+                start = 2**(i-1)
+                end = 2**i
+            mask = tf.logical_and(tf.greater_equal(target, start),
+                                  tf.less(target, end))
+            target_masked = tf.boolean_mask(target, mask)
+            input_masked = tf.boolean_mask(input_layer, mask)
+            loss = epe('epe_segment_' + str(i), input_masked,
+                       target_masked)
+            losses.append(loss)
+        return losses
 
 
 def reshape(name, input_layer, output_shape):
