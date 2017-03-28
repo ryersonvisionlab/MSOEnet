@@ -296,7 +296,8 @@ class MSOEmultiscale(object):
                         it_per_sec = print_frequency / time_diff
                         remaining_it = iterations - i
                         eta = remaining_it / it_per_sec
-                        print 'Iteration %d: epe squared: %f lr: %f ' \
+                        print '(run ' + run_id + ')' + ' Iteration %d: ' \
+                              'epe squared: %f lr: %f ' \
                               'iter per/s: %f ETA: %s' \
                               % (i + 1, results[1], lr, it_per_sec,
                                  str(datetime.timedelta(seconds=eta)))
