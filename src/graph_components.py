@@ -121,6 +121,12 @@ def l1_normalize(name, input_layer, axis=4, eps=1e-12):
         input_layer_inv_norm = tf.reciprocal(tf.maximum(abs_sum, eps))
         return tf.multiply(input_layer, input_layer_inv_norm)
 
+def contrast_norm(name, input_layer, eps=1e-12):
+    with tf.get_default_graph().name_scope(name):
+        mean, var = tf.nn.moments(input_layer, axes=[1, 2, 3, 4], keep_dims=True)
+        std = tf.sqrt(var + eps)
+        return (input_layer - mean) / std
+
 
 def squared_epe(name, input_layer, target):
     with tf.get_default_graph().name_scope(name):
