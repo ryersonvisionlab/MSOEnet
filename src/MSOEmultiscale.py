@@ -50,9 +50,10 @@ class MSOEmultiscale(object):
                     epe('validation_epe', self.output, self.target)
 
                 # attach loss segmented by speeds (for validation)
+                self.num_segments = 8
                 self.val_epes_segmented = \
                     epe_speedsegmented('validation_epe_segmented',
-                                       self.output, self.target, 5)
+                                       self.output, self.target, self.num_segments)
 
                 # attach summaries
                 self.attach_summaries('summaries')
@@ -67,7 +68,7 @@ class MSOEmultiscale(object):
                                                  self.val_epe_placeholder,
                                                  collections=['val'])
             self.val_epe_segmented_summaries = []
-            for i in range(5):
+            for i in range(self.num_segments):
                 placeholder = tf.placeholder(tf.float32)
                 self.val_epe_segmented_summaries.append({
                     'placeholder': placeholder,
@@ -322,7 +323,7 @@ class MSOEmultiscale(object):
                         assert batch_size < num_validation
                         num_chunks = num_validation / batch_size
                         val_epe = 0
-                        val_epes_segmented = np.zeros(5)
+                        val_epes_segmented = np.zeros(self.num_segments)
                         for j in range(num_chunks):
                             start = j*batch_size
                             end = (j+1)*batch_size
@@ -362,7 +363,7 @@ class MSOEmultiscale(object):
                         summary_writer.add_summary(summary, i + 1)
                         summary_writer.flush()
 
-                        for s in range(5):
+                        for s in range(self.num_segments):
                             val_epe_summary = \
                                 self.val_epe_segmented_summaries[s]['summary']
                             placeholder = \
