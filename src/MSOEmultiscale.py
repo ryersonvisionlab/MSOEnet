@@ -75,14 +75,10 @@ class MSOEmultiscale(object):
                     'summary': tf.summary.scalar('validation epe segment ' + str(i),
                                                  placeholder,
                                                  collections=['val'])})
-
+            
             # fetch shared weights for MSOEnet conv1
             with tf.variable_scope('MSOEnet_conv1', reuse=True):
                 W_conv1 = tf.get_variable('weights')
-
-            # fetch shared weights for Gate conv1
-            with tf.variable_scope('Gate_conv1', reuse=True):
-                gW_conv1 = tf.get_variable('weights')
 
             # visualize target and predicted flows
             tf.summary.image('flow predicted (normalized)',
@@ -120,14 +116,7 @@ class MSOEmultiscale(object):
             tf.summary.image('filter conv1 1 norm', grid1n)
             tf.summary.image('filter conv1 0', grid0)
             tf.summary.image('filter conv1 1', grid1)
-            viz0 = gW_conv1[0, :, :, :, :]
-            grid0n = put_kernels_on_grid('gate_kernel_visualization_norm',
-                                         viz0, 4, 1)
-            grid0 = put_kernels_on_grid('gate_kernel_visualization',
-                                        viz0, 4, 1, norm=False)
-            tf.summary.image('filter gate_conv1 0 norm', grid0n)
-            tf.summary.image('filter gate_conv1 0', grid0)
-
+            
             # histogram of filters
             for i in range(32):
                 drange = tf.reduce_max(W_conv1[:, :, :, :, i]) - \
@@ -136,11 +125,8 @@ class MSOEmultiscale(object):
                 tf.summary.histogram('histogram filter conv1 ' + str(i),
                                      W_conv1[:, :, :, :, i])
 
-            # visualize gates and blurred inputs
+            # visualize blurred inputs
             for scale in range(self.user_config['num_scales']):
-                tf.summary.image('gate_' + str(scale),
-                                 self.gates[..., scale:scale+1],
-                                 max_outputs=1)
                 tf.summary.image('input_' + str(scale),
                                  self.multiscale_inputs[scale],
                                  max_outputs=1)
@@ -159,12 +145,8 @@ class MSOEmultiscale(object):
             # initial MSOEnet on original input size (batchx1xHxWx64)
             initial_msoe = MSOEnet('MSOEnet_0', input_layer, reuse).output
 
-            # initial GatingNetwork on original input size (batchx1xHxWx1)
-            initial_gate = GatingNetwork('Gate_0', input_layer, reuse).output
-
             # initialize pyramid
             msoe_array = [initial_msoe]
-            gate_array = [initial_gate]
             inputs = [input_layer[:, 0]]
 
             num_scales = self.user_config['num_scales']
@@ -184,52 +166,21 @@ class MSOEmultiscale(object):
                 small_msoe = MSOEnet('MSOEnet_' + str(scale), small_input,
                                      reuse=True).output
 
-                # create GatingNetwork and insert data (batchx1xhxwx1)
-                small_gate = GatingNetwork('Gate_' + str(scale), small_input,
-                                           reuse=True).output
-
                 # upsample flow output (batchx1xHxWx64)
                 msoe = bilinear_resample3d('MSOEnet_upsample_' + str(scale),
                                            small_msoe, tf.shape(input_layer)
                                            [2:4])
 
-                # upsample gate output (batchx1xHxWx1)
-                gate = bilinear_resample3d('Gate_upsample_' + str(scale),
-                                           small_gate, tf.shape(input_layer)
-                                           [2:4])
-
                 msoe_array.append(msoe)
-                gate_array.append(gate)
 
-            # channel concatenate gate outputs (batchx1xHxWxnum_scales)
-            concatenated_gates = channel_concat3d('Gates_concat', gate_array)
-
-            # channel-wise softmax the gate outputs (batchx1xHxWxnum_scales)
-            gates = softmax('Gates_softmax', concatenated_gates)
-
-            # for visualizing the gates and the blurred inputs (temporary)
-            self.gates = gates[:, 0]
+            # for visualizing the blurred inputs (temporary)
             self.multiscale_inputs = inputs
 
-            # apply per-scale gating to msoe outputs
-            gated_msoes = [gates[..., :1] * msoe_array[0]]  # initial
-            for scale in range(1, num_scales):
-                # scale responses relative to the scale
-                weight = 2**scale
+            # channel concat msoe outputs 
+            concatenated_msoes = channel_concat3d('MSOEnet_concat', msoe_array)
 
-                msoe_at_scale = msoe_array[scale]
-                gate_at_scale = gates[..., scale:scale+1]
-
-                # slow
-                gated_msoe_at_scale = (gate_at_scale * weight) * msoe_at_scale
-
-                gated_msoes.append(gated_msoe_at_scale)
-
-            # sum up gated responses over all scales (batchx1xHxWx64)
-            gated_msoe = tf.add_n(gated_msoes)
-
-            # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
-            output = conv3d('MSOEnet_conv3', gated_msoe, 1, 1, 2, reuse)
+            # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
+            output = conv3d('MSOEnet_conv3', concatenated_msoes, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
