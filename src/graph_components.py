@@ -255,6 +255,14 @@ def flow_to_colour(name, input_layer, norm=True):
         return draw_hsv_ocv(input_layer, norm)
 
 
+def contrast_norm(name, input_layer, eps=1e-12):
+    with tf.get_default_graph().name_scope(name):
+        mean, var = tf.nn.moments(input_layer, axes=[1, 2, 3, 4],
+                                  keep_dims=True)
+        std = tf.sqrt(var + eps)
+        return (input_layer - mean) / std
+
+
 def softmax(name, input_layer, axis=-1):
     with tf.get_default_graph().name_scope(name):
         return tf.nn.softmax(input_layer, dim=axis)
