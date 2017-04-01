@@ -78,12 +78,12 @@ def conv3d(name, input_layer, kernel_spatial_size,
 
 
 def deconv3d(name, input_layer, kernel_spatial_size,
-             spatial_stride, out_shape, out_channels, reuse=None):
+             spatial_stride, out_shape, reuse=None):
     with tf.get_default_graph().name_scope(name):
         with tf.variable_scope(name, reuse=reuse):
             in_channels = input_layer.get_shape().as_list()[-1]
             f_shape = [kernel_spatial_size, kernel_spatial_size,
-                       out_channels, in_channels]
+                       out_shape[-1], in_channels]
             width = f_shape[0]
             height = f_shape[0]
             f = ceil(width/2.0)
@@ -102,7 +102,7 @@ def deconv3d(name, input_layer, kernel_spatial_size,
                                       shape=weights.shape)
 
             weights = tf.reshape(weights, [1, kernel_spatial_size,
-                                 kernel_spatial_size, out_channels, in_channels])
+                                 kernel_spatial_size, out_shape[-1], in_channels])
 
             deconv = tf.nn.conv3d_transpose(input_layer, weights, out_shape,
                                             strides=[1, 1, spatial_stride,
