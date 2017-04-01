@@ -19,10 +19,11 @@ class GatingNetwork(object):
             conv2 = conv3d('Gate_conv2', h_conv1, 3, 1, 8, reuse)
             # second activation
             h_conv2 = relu(conv2)
-            # decode to final gate output (1x3x3x1xnum_input_channels)
+            # decode to final gate output (1x1x1x1xnum_input_channels)
             num_output = input.get_shape().as_list()[-1]
-            gate_output = conv3d('Gate_conv3', h_conv2, 1, 1, num_output, reuse)
+            gate_output = conv3d('Gate_conv3', h_conv2, 1, 1, num_output,
+                                 reuse)
             # final activation [0,1]
-            h_gate_output = tf.sigmoid(gate_output)            
+            h_gate_output = tf.sigmoid(gate_output)
 
             self.output = h_gate_output

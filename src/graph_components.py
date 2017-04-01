@@ -112,6 +112,15 @@ def deconv3d(name, input_layer, kernel_spatial_size,
             return deconv
 
 
+def upconv3d(name, input_layer, kernel_spatial_size, output_shape,
+             out_channels, reuse=None):
+    with tf.get_default_graph().name_scope(name):
+        up = bilinear_resample3d('upsample', input_layer, output_shape)
+        conv = conv3d('conv3d', up, kernel_spatial_size, 1, out_channels,
+                      reuse)
+        return conv
+
+
 def avg_pool3d(name, input_layer, kernel_spatial_size,
                kernel_temporal_size, spatial_stride=1):
     with tf.get_default_graph().name_scope(name):

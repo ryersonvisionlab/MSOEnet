@@ -182,8 +182,10 @@ class MSOEmultiscale(object):
 
                 # upsample previous MSOEnet output (batchx1xhxwx64)
                 can_reuse = reuse if scale == num_scales-2 else True
-                up_msoe = deconv3d('upsample', msoes[scale+1], 5, 2, tf.shape(msoe),
-                                   msoe.get_shape().as_list()[-1], reuse=can_reuse)
+                up_msoe = upconv3d('upconv', msoes[scale+1], 3,
+                                   tf.shape(msoe)[2:4],
+                                   msoe.get_shape().as_list()[-1],
+                                   reuse=can_reuse)
 
                 # create a GatingNetwork and insert data (batchx1xhxwx64)
                 gate = GatingNetwork('Gate_' + str(scale), inputs[scale],
