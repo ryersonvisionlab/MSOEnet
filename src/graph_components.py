@@ -175,11 +175,14 @@ def squared_epe(name, input_layer, target):
         return tf.reduce_mean(loss)
 
 
-def epe(name, input_layer, target):
+def epe(name, input_layer, target, count=None):
     with tf.get_default_graph().name_scope(name):
         loss = tf.sqrt((input_layer[..., 0] - target[..., 0])**2 + \
                        (input_layer[..., 1] - target[..., 1])**2)
-        return tf.reduce_mean(loss)
+        if count is not None:
+            return tf.reduce_sum(loss) / tf.to_float(count)
+        else:
+            return tf.reduce_mean(loss)
 
 
 def epe_speedsegmented(name, input_layer, target, num_segments):
@@ -201,8 +204,9 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
             mask = tf.expand_dims(mask, axis=-1)
             target_masked = target * mask
             input_masked = input_layer * mask
+            count = tf.shape(tf.where(tf.greater(mask, 0.0)))[0]
             loss = epe('epe_segment_' + str(i), input_masked,
-                       target_masked)
+                       target_masked, count)
             losses.append(loss)
         return losses
 
@@ -253,6 +257,14 @@ def pack(name, input_layer, axis):
 def flow_to_colour(name, input_layer, norm=True):
     with tf.get_default_graph().name_scope(name):
         return draw_hsv_ocv(input_layer, norm)
+
+
+def contrast_norm(name, input_layer, eps=1e-12):
+    with tf.get_default_graph().name_scope(name):
+        mean, var = tf.nn.moments(input_layer, axes=[1, 2, 3, 4],
+                                  keep_dims=True)
+        std = tf.sqrt(var + eps)
+        return (input_layer - mean) / std
 
 
 def softmax(name, input_layer, axis=-1):

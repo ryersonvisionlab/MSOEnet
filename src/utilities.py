@@ -9,7 +9,7 @@ def rgb2gray(rgb):
 
 
 # TODO: test usefulness of imagenet mean subtraction
-def load_image(path, mean_sub=True):
+def load_image(path, mean_sub=False):
     IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
                              dtype='float32').reshape((1, 1, 3))  # RGB
     IMAGENET_MEAN_GRAY = rgb2gray(IMAGENET_MEAN).astype('float32')

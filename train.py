@@ -19,7 +19,7 @@ my_config['lr'] = 6e-3
 my_config['num_threads'] = 6
 my_config['num_scales'] = 5
 my_config['gpu'] = 0
-my_config['run_id'] = 'scale_space_gating_upconv'
+my_config['run_id'] = 'scale_space_gating_upconv_contrastnorm'
 
 net = MSOEmultiscale(config={'tf': config_proto,
                              'user': my_config})

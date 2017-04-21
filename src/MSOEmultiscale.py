@@ -153,6 +153,9 @@ class MSOEmultiscale(object):
 
     def build_pyramid(self, name, input_layer, reuse=None):
         with tf.get_default_graph().name_scope(name):
+            # contrast normalize input
+            input_layer = contrast_norm('contrast_norm', input_layer)
+
             # initialize input pyramid
             inputs = [input_layer]
 
