@@ -87,6 +87,18 @@ def avg_pool3d(name, input_layer, kernel_spatial_size,
                                 padding='SAME')
 
 
+def max_pool3d(name, input_layer, kernel_spatial_size,
+               kernel_temporal_size, spatial_stride=1):
+    with tf.get_default_graph().name_scope(name):
+        return tf.nn.max_pool3d(input_layer,
+                                ksize=[1, kernel_temporal_size,
+                                       kernel_spatial_size,
+                                       kernel_spatial_size, 1],
+                                strides=[1, 1, spatial_stride,
+                                         spatial_stride, 1],
+                                padding='SAME')
+
+
 def blur_downsample3d(name, input_layer, kernel_spatial_size,
                       spatial_stride, sigma=0.5):
     with tf.get_default_graph().name_scope(name):
