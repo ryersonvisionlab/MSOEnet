@@ -14,13 +14,13 @@ def freeze_graph(model_folder):
 
     # We precise the file fullname of our freezed graph
     absolute_model_folder = "/".join(input_checkpoint.split('/')[:-1])
-    output_graph = absolute_model_folder + "/MSOEnet.tfmodel"
+    output_graph = absolute_model_folder + "/MSOEmultiscale.tfmodel"
 
     # Before exporting our graph, we need to precise what is our output node
     # This is how TF decides what part of the Graph he has to keep and what
     # part it can dump
     # NOTE: this variable is plural, because you can have multiple output nodes
-    output_node_names = "MSOEnet/reshape/Reshape"
+    output_node_names = "MSOEmultiscale/reshape/Reshape"
 
     # We clear devices to allow TensorFlow to control on which device it will
     # load operations

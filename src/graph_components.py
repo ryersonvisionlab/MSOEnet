@@ -180,7 +180,7 @@ def epe(name, input_layer, target, count=None):
         loss = tf.sqrt((input_layer[..., 0] - target[..., 0])**2 + \
                        (input_layer[..., 1] - target[..., 1])**2)
         if count is not None:
-            return tf.reduce_sum(loss) / tf.to_float(count)
+            return tf.reduce_sum(loss) / count
         else:
             return tf.reduce_mean(loss)
 
@@ -204,7 +204,7 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
             mask = tf.expand_dims(mask, axis=-1)
             target_masked = target * mask
             input_masked = input_layer * mask
-            count = tf.shape(tf.where(tf.greater(mask, 0.0)))[0]
+            count = tf.reduce_sum(mask)
             loss = epe('epe_segment_' + str(i), input_masked,
                        target_masked, count)
             losses.append(loss)
