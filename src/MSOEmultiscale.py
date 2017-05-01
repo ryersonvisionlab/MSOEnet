@@ -27,6 +27,7 @@ class MSOEmultiscale(object):
 
                 # set queue runner
                 self.queue_runner = self.data['queue_runner']
+                self.queue_runner.augment_data = True
 
                 # create input and target placeholders for feeding in training
                 # data, validation data, or test dat

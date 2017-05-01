@@ -12,6 +12,7 @@ class QueueRunner(object):
         self.dataset = dataset
         self.batch_size = batch_size
         self.n_threads = n_threads
+        self.augment_data = False
 
         input_shape = [None] + input_shape
         target_shape = [None] + target_shape
@@ -54,7 +55,8 @@ class QueueRunner(object):
             threads.append(t)
         return threads
 
+
     def _data_iterator(self):
         while True:
-            x_batch, y_batch = self.dataset.next_batch(self.batch_size)
+            x_batch, y_batch = self.dataset.next_batch(self.batch_size, self.augment_data)
             yield x_batch, y_batch
