@@ -41,8 +41,8 @@ class DataSet(object):
 
         return packaged_images, packaged_flows
 
-    
-    def discrete_rotate(input, k, flow=False):
+  
+    def discrete_rotate(self, input, k, flow=False):
         if flow:
             rad = k * (np.pi / 2.0)
             fx, fy = np.copy(input[:, :, 0]), np.copy(input[:, :, 1])
@@ -52,19 +52,19 @@ class DataSet(object):
             input[..., 1] = (fx * sin) + (fy * cos)
         return np.rot90(input, k)
 
-    
-    def augment(dataX, dataY):
+
+    def augment(self, dataX, dataY):
         for i in range(dataX.shape[0]):
             k = np.random.randint(0, 4)
             if k > 0:
                 for j in range(dataX.shape[1]):
-                    dataX[i][j] = discrete_rotate(dataX[i][j], k)
-                dataY[i] = discrete_rotate(dataY[i], k, flow=True)
+                    dataX[i][j] = self.discrete_rotate(dataX[i][j], k)
+                dataY[i] = self.discrete_rotate(dataY[i], k, flow=True)
         return dataX, dataY
-        
+
 
     # TODO: reduce code reuse between this and validation_data
-    def next_batch(self, batch_size, augment=False):
+    def next_batch(self, batch_size, augment_batch=False):
         # sampling with replacement
         indices = np.random.choice(len(self._train), batch_size)
         sequences = [self._train[i] for i in indices]
@@ -102,8 +102,8 @@ class DataSet(object):
         packaged_images = np.array(packaged_images)
         packaged_flows = np.array(packaged_flows)
 
-        if augment:
-            augment(packaged_images, packaged_flows)
+        if augment_batch:
+            self.augment(packaged_images, packaged_flows)
 
         return packaged_images, packaged_flows
 
@@ -166,24 +166,26 @@ def load_UCF101(data_dir):
         i = 0
         for sequence_subgroup in get_immediate_subdirectories(sequence_group):
             flo_paths = sorted(glob.glob(sequence_subgroup + '/*.flo'))
+            count = 1
             for flo_path in flo_paths:
                 flo_name = os.path.split(flo_path)[1]
                 # assuming frame_%08d.{png,flo}
                 flo_number = int(flo_name[6:14])
                 img1_name = flo_name[:14] + '.png'
                 img2_name = 'frame_%08d.png' % (flo_number + 1)
-                if i != 0:
+                if count > 10:
                     train_sequences.append({
                         'prefix': sequence_subgroup,
                         'image_names': [img1_name, img2_name],
                         'flow_name': flo_name
                     })
-                elif i == 0:
+                elif count <= 10 and i == 0:
                     validation_sequences.append({
                         'prefix': sequence_subgroup,
                         'image_names': [img1_name, img2_name],
                         'flow_name': flo_name
                     })
+                count += 1
             i += 1
 
     return DataSet(train=train_sequences,
