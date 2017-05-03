@@ -1,5 +1,5 @@
 import tensorflow as tf
-from src.Dataset import load_FlyingChairs
+from src.Dataset import load_FlyingChairs, load_UCF101
 from src.QueueRunner import QueueRunner
 from src.utilities import draw_hsv_ocv, gauss2d_kernel
 from math import ceil
@@ -9,7 +9,10 @@ import numpy as np
 def data_layer(name, train_filename, batch_size, num_threads):
     with tf.get_default_graph().name_scope(name):
         # load dataset
-        d = load_FlyingChairs(train_filename)
+        if 'UCF' in train_filename:
+            d = load_UCF101(train_filename)
+        elif 'Chairs' in train_filename:
+            d = load_FlyingChairs(train_filename)
 
         # read validation data
         X_val, y_val = d.validation_data()
@@ -125,6 +128,18 @@ def avg_pool3d(name, input_layer, kernel_spatial_size,
                kernel_temporal_size, spatial_stride=1):
     with tf.get_default_graph().name_scope(name):
         return tf.nn.avg_pool3d(input_layer,
+                                ksize=[1, kernel_temporal_size,
+                                       kernel_spatial_size,
+                                       kernel_spatial_size, 1],
+                                strides=[1, 1, spatial_stride,
+                                         spatial_stride, 1],
+                                padding='SAME')
+
+
+def max_pool3d(name, input_layer, kernel_spatial_size,
+               kernel_temporal_size, spatial_stride=1):
+    with tf.get_default_graph().name_scope(name):
+        return tf.nn.max_pool3d(input_layer,
                                 ksize=[1, kernel_temporal_size,
                                        kernel_spatial_size,
                                        kernel_spatial_size, 1],
