@@ -233,7 +233,7 @@ class MSOEmultiscale(object):
             gated_msoe = tf.add_n(gated_msoes)
 
             # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
-            output = conv3d('MSOEnet_conv3', gated_msoe, 1, 1, 2, reuse)
+            output = conv3d('MSOEnet_conv4', gated_msoe, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
