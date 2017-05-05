@@ -173,8 +173,14 @@ class MSOEmultiscale(object):
             # channel concat msoe outputs
             concatenated_msoes = channel_concat3d('MSOEnet_concat', msoes)
 
-            # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
-            output = conv3d('MSOEnet_conv3', concatenated_msoes, 1, 1, 2, reuse)
+            # third convolution (1x3x3x64*num_scalesx64)
+            conv3 = conv3d('MSOEnet_conv3', concatenated_msoes, 3, 1, 64, reuse)
+
+            # activation
+            h_conv3 = tf.nn.relu(conv3)
+
+            # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
+            output = conv3d('MSOEnet_conv4', h_conv3, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
