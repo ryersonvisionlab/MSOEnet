@@ -25,5 +25,9 @@ class MSOEnet(object):
             conv2 = conv3d('MSOEnet_conv2', pool1, 1, 1, 64, reuse)
             # channel-wise l1 normalization (batchx1xHxWx64)
             l1_norm = l1_normalize('l1_norm', conv2)
+            # third convolution (1x3x3x64x64)
+            conv3 = conv3d('MSOEnet_conv3', l1_norm, 3, 1, 64, reuse)
+            # activation
+            h_conv3 = tf.nn.relu(conv3)
 
-            self.output = l1_norm
+            self.output = h_conv3
