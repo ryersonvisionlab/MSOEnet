@@ -2,7 +2,6 @@ import tensorflow as tf
 from src.graph_components import *
 from src.utilities import *
 from src.MSOEnet import MSOEnet
-from src.GatingNetwork import GatingNetwork
 import time
 import datetime
 import numpy as np
@@ -80,10 +79,6 @@ class MSOEmultiscale(object):
             with tf.variable_scope('MSOEnet_conv1', reuse=True):
                 W_conv1 = tf.get_variable('weights')
 
-            # fetch shared weights for Gate conv1
-            with tf.variable_scope('Gate_conv1', reuse=True):
-                gW_conv1 = tf.get_variable('weights')
-
             # visualize target and predicted flows
             tf.summary.image('flow predicted (normalized)',
                              flow_to_colour('flow_visualization',
@@ -120,13 +115,6 @@ class MSOEmultiscale(object):
             tf.summary.image('filter conv1 1 norm', grid1n)
             tf.summary.image('filter conv1 0', grid0)
             tf.summary.image('filter conv1 1', grid1)
-            viz0 = gW_conv1[0, :, :, :, :]
-            grid0n = put_kernels_on_grid('gate_kernel_visualization_norm',
-                                         viz0, 4, 1)
-            grid0 = put_kernels_on_grid('gate_kernel_visualization',
-                                        viz0, 4, 1, norm=False)
-            tf.summary.image('filter gate_conv1 0 norm', grid0n)
-            tf.summary.image('filter gate_conv1 0', grid0)
 
             # histogram of filters
             for i in range(32):
@@ -156,54 +144,37 @@ class MSOEmultiscale(object):
             # contrast normalize input
             input_layer = contrast_norm('contrast_norm', input_layer)
 
-            # initialize input pyramid
+            # initialize MSOEnet pyramid (batchx1xHxWx64)
             inputs = [input_layer]
+            msoes = [MSOEnet('MSOEnet_0', inputs[0], reuse).output]
 
-            # input pyramid (big to small)
+            # MSOEnet pyramid (big to small)
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
-                scaled_input_layer = inputs[0] if scale == 1 else small_input
-                small_input = blur_downsample3d('input_downsample_' +
+                # downsample data (batchx2xhxwx1)
+                inputs.append(blur_downsample3d('input_downsample_' +
                                                 str(scale),
-                                                scaled_input_layer, 5, 2,
-                                                sigma=2)
-                inputs.append(small_input)
+                                                inputs[scale-1], 5, 2,
+                                                sigma=2))
 
-            # initial MSOEnet on smallest input (batchx1xhxwx64)
-            initial_msoe = MSOEnet('MSOEnet_'+str(num_scales-1),
-                                   inputs[num_scales-1], reuse).output
+                # create a MSOEnet and insert downsampled data (batchx1xhxwx64)
+                small_msoe = MSOEnet('MSOEnet_' + str(scale), inputs[scale],
+                                     reuse=True).output
 
-            # initialize MSOEnet pyramid
-            msoes = [None]*num_scales
-            msoes[num_scales-1] = initial_msoe
+                # upsample MSOEnet output to original input size (batchx1xHxWx64)
+                msoe = bilinear_resample3d('MSOEnet_' + str(scale) + '_upsample',
+                                           small_msoe, tf.shape(inputs[0])[2:4])
 
-            # MSOEnet pyramid (small to big)
-            for scale in range(num_scales-2, -1, -1):
-                # create a MSOEnet and insert data (batchx1xhxwx64)
-                msoe = MSOEnet('MSOEnet_' + str(scale), inputs[scale],
-                               reuse=True).output
-
-                # upsample previous MSOEnet output (batchx1xhxwx64)
-                can_reuse = reuse if scale == num_scales-2 else True
-                up_msoe = upconv3d('upconv', msoes[scale+1], 3,
-                                   tf.shape(msoe)[2:4],
-                                   msoe.get_shape().as_list()[-1],
-                                   reuse=can_reuse)
-
-                # create a GatingNetwork and insert data (batchx1xhxwx64)
-                gate = GatingNetwork('Gate_' + str(scale), inputs[scale],
-                                     reuse=can_reuse).output
-
-                # gated MSOEnet (batchx1xhxwx64)
-                gated_msoe = gate * up_msoe + (1 - gate) * msoe
-
-                msoes[scale] = gated_msoe
+                msoes.append(msoe)
 
             # for visualizing the blurred inputs (temporary)
             self.multiscale_inputs = [input[:, 0] for input in inputs]
 
-            # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
-            output = conv3d('MSOEnet_conv3', msoes[0], 1, 1, 2, reuse)
+            # channel concat msoe outputs
+            concatenated_msoes = channel_concat3d('MSOEnet_concat', msoes)
+
+            # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
+            output = conv3d('MSOEnet_conv3', concatenated_msoes, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,
