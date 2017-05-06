@@ -33,8 +33,8 @@ class MSOEnet(object):
             h_conv3 = tf.nn.relu(conv3)
             # max pooling (1x5x5x1x1)
             pool2 = max_pool3d('max_pool2', h_conv3, 5, 1)
-            # fourth convolution (1x3x3x64x64)
-            conv4 = conv3d('MSOEnet_conv4', pool2, 3, 1, 64, reuse)
+            # fourth convolution (1x3x3x64x128)
+            conv4 = conv3d('MSOEnet_conv4', pool2, 3, 1, 128, reuse)
             # activation
             h_conv4 = tf.nn.relu(conv4)
 
