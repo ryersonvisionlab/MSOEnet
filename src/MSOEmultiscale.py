@@ -26,6 +26,7 @@ class MSOEmultiscale(object):
 
                 # set queue runner
                 self.queue_runner = self.data['queue_runner']
+                self.queue_runner.augment_data = True
 
                 # create input and target placeholders for feeding in training
                 # data, validation data, or test dat
@@ -173,8 +174,8 @@ class MSOEmultiscale(object):
             # channel concat msoe outputs
             concatenated_msoes = channel_concat3d('MSOEnet_concat', msoes)
 
-            # fourth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
-            output = conv3d('MSOEnet_conv3', concatenated_msoes, 1, 1, 2, reuse)
+            # fifth convolution (flow out i.e. decode) (1x1x1x64*num_scalesx2)
+            output = conv3d('MSOEnet_conv5', concatenated_msoes, 1, 1, 2, reuse)
 
             # reshape (batch x H x W x 2)
             output = reshape('reshape', output,

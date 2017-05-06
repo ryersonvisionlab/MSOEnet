@@ -19,11 +19,24 @@ class MSOEnet(object):
                            self.temporal_extent, 32, reuse)
             # activation
             h_conv1 = eltwise_square('square', conv1)
-            # average pooling (1x5x5x1x1)
-            pool1 = avg_pool3d('avg_pool', h_conv1, 5, 1)
+            # max pooling (1x5x5x1x1)
+            pool1 = max_pool3d('max_pool1', h_conv1, 5, 1)
             # second convolution (1x1x1x32x64)
             conv2 = conv3d('MSOEnet_conv2', pool1, 1, 1, 64, reuse)
+            # activation
+            h_conv2 = tf.nn.relu(conv2)
             # channel-wise l1 normalization (batchx1xHxWx64)
-            l1_norm = l1_normalize('l1_norm', conv2)
+            l1_norm = l1_normalize('l1_norm', h_conv2)
+            # third convolution (1x3x3x64x64)
+            conv3 = conv3d('MSOEnet_conv3', l1_norm, 3, 1, 64, reuse)
+            # activation
+            h_conv3 = tf.nn.relu(conv3)
+            # max pooling (1x5x5x1x1)
+            pool2 = max_pool3d('max_pool2', h_conv3, 5, 1)
+            # fourth convolution (1x3x3x64x64)
+            conv4 = conv3d('MSOEnet_conv4', pool2, 3, 1, 64, reuse)
+            # activation
+            h_conv4 = tf.nn.relu(conv4)
 
-            self.output = l1_norm
+
+            self.output = h_conv4
