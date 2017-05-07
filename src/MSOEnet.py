@@ -19,8 +19,8 @@ class MSOEnet(object):
                            self.temporal_extent, 32, reuse)
             # activation
             h_conv1 = eltwise_square('square', conv1)
-            # max pooling (1x5x5x1x1)
-            pool1 = max_pool3d('max_pool', h_conv1, 5, 1)
+            # max pooling (1x11x11x1x1)
+            pool1 = max_pool3d('max_pool', h_conv1, 11, 1)
             # second convolution (1x1x1x32x64)
             conv2 = conv3d('MSOEnet_conv2', pool1, 1, 1, 64, reuse)
             # activation

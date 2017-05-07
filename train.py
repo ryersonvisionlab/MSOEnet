@@ -18,8 +18,8 @@ my_config['validation_frequency'] = 500
 my_config['lr'] = 6e-3
 my_config['num_threads'] = 6
 my_config['num_scales'] = 5
-my_config['gpu'] = 0
-my_config['run_id'] = 'no_gating_deeperMSOEnet_1b_ucf101'
+my_config['gpu'] = 2
+my_config['run_id'] = 'no_gating_deeperMSOEnet_1c_ucf101'
 
 net = MSOEmultiscale(config={'tf': config_proto,
                              'user': my_config})
