@@ -4,21 +4,15 @@ import cv2
 import tensorflow as tf
 from scipy.misc import imread
 
+
 def rgb2gray(rgb):
     return np.dot(rgb[..., :3], [0.299, 0.587, 0.114])  # MATLAB style
 
 
-# TODO: test usefulness of imagenet mean subtraction
-def load_image(path, mean_sub=False):
-    IMAGENET_MEAN = np.array([123.68, 116.779, 103.939],
-                             dtype='float32').reshape((1, 1, 3))  # RGB
-    IMAGENET_MEAN_GRAY = rgb2gray(IMAGENET_MEAN).astype('float32')
-    if mean_sub is False:
-        IMAGENET_MEAN_GRAY = 0.0
+def load_image(path):
     rgb = imread(path)  # RGB [0, 255]
     gray = rgb2gray(rgb).astype('float32')  # grayscale [0, 255]
-    gray_subtracted = gray - IMAGENET_MEAN_GRAY
-    gray_scaled = gray_subtracted / 255.0
+    gray_scaled = gray / 255.0
     return np.expand_dims(gray_scaled, 3)  # grayscale [0, 1]
 
 
@@ -106,7 +100,10 @@ def draw_hsv(flow):
     hsv[..., 0] = ang*(180/np.pi/2)  # cv2.COLOR_HSV2BGR expects H = [0, 180]
                                      # cartToPolar gives ang = [0, 2pi]
     hsv[..., 1] = 255
-    hsv[..., 2] = cv2.normalize(v, None, 0, 255, cv2.NORM_MINMAX)
+    if v.min() == v.max() and v.min() != 0:
+        hsv[..., 2] = 255
+    else:
+        hsv[..., 2] = cv2.normalize(v, None, 0, 255, cv2.NORM_MINMAX)
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
     return bgr

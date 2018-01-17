@@ -18,7 +18,7 @@ class MSOEmultiscale(object):
         with self.graph.as_default():
             with tf.device('/gpu:' + str(self.user_config['gpu'])):
                 # retrieve training and validation data
-                self.data, input_shape, target_shape = \
+                self.data, input_shape, target_shape, masks_shape = \
                     data_layer('data_layer',
                                self.user_config['train_filename'],
                                self.user_config['batch_size'],
@@ -26,6 +26,8 @@ class MSOEmultiscale(object):
 
                 # set queue runner
                 self.queue_runner = self.data['queue_runner']
+                self.queue_runner.augment_data = \
+                    self.user_config['augment_data']
 
                 # create input and target placeholders for feeding in training
                 # data, validation data, or test dat
@@ -35,14 +37,19 @@ class MSOEmultiscale(object):
                 self.target = tf.placeholder(dtype=tf.float32,
                                              shape=[None] + target_shape,
                                              name='target')
+                self.masks = tf.placeholder(dtype=tf.float32,
+                                            shape=[None] + masks_shape,
+                                            name='masks')
 
                 # build multi-scale pyramid
                 self.output = self.build_pyramid('MSOEmultiscale', self.input)
 
                 # attach loss to be minimized
-                self.train_epe_squared = \
-                    squared_epe('train_epe_squared', self.output, self.target) + \
-                    tf.add_n(tf.get_collection('weight_regs'))
+                self.train_epe = \
+                    epe('train_epe', self.output, self.target, self.masks,
+                        tf.reduce_sum(self.masks)) + \
+                    tf.add_n(tf.get_collection('weight_regs')) + \
+                    tf.add_n(self.intermediate_losses)
 
                 # attach loss to be used for validation
                 self.val_epe = \
@@ -52,7 +59,8 @@ class MSOEmultiscale(object):
                 self.num_segments = 8
                 self.val_epes_segmented = \
                     epe_speedsegmented('validation_epe_segmented',
-                                       self.output, self.target, self.num_segments)
+                                       self.output, self.target, None,
+                                       self.num_segments)
 
                 # attach summaries
                 self.attach_summaries('summaries')
@@ -61,17 +69,18 @@ class MSOEmultiscale(object):
     def attach_summaries(self, name):
         with tf.name_scope(name):
             # graph losses
-            tf.summary.scalar('training epe squared', self.train_epe_squared)
+            tf.summary.scalar('training epe', self.train_epe)
             self.val_epe_placeholder = tf.placeholder(tf.float32)
             self.val_epe_summary = tf.summary.scalar('validation epe',
-                                                 self.val_epe_placeholder,
-                                                 collections=['val'])
+                                                     self.val_epe_placeholder,
+                                                     collections=['val'])
             self.val_epe_segmented_summaries = []
             for i in range(self.num_segments):
                 placeholder = tf.placeholder(tf.float32)
                 self.val_epe_segmented_summaries.append({
                     'placeholder': placeholder,
-                    'summary': tf.summary.scalar('validation epe segment ' + str(i),
+                    'summary': tf.summary.scalar('validation epe segment ' +
+                                                 str(i),
                                                  placeholder,
                                                  collections=['val'])})
 
@@ -97,6 +106,9 @@ class MSOEmultiscale(object):
                                             self.target[0:1], norm=False),
                              max_outputs=1)
 
+            # visualize mask
+            tf.summary.image('mask', self.masks, max_outputs=1)
+
             # visualize input images
             tf.summary.image('image', self.input[0], max_outputs=2)
 
@@ -117,12 +129,12 @@ class MSOEmultiscale(object):
             tf.summary.image('filter conv1 1', grid1)
 
             # histogram of filters
-            for i in range(32):
-                drange = tf.reduce_max(W_conv1[:, :, :, :, i]) - \
-                         tf.reduce_min(W_conv1[:, :, :, :, i])
-                tf.summary.scalar('drange filter conv1 ' + str(i), drange)
-                tf.summary.histogram('histogram filter conv1 ' + str(i),
-                                     W_conv1[:, :, :, :, i])
+            # for i in range(32):
+            #     drange = tf.reduce_max(W_conv1[:, :, :, :, i]) - \
+            #              tf.reduce_min(W_conv1[:, :, :, :, i])
+            #     tf.summary.scalar('drange filter conv1 ' + str(i), drange)
+            #     tf.summary.histogram('histogram filter conv1 ' + str(i),
+            #                          W_conv1[:, :, :, :, i])
 
             # visualize blurred inputs
             for scale in range(self.user_config['num_scales']):
@@ -148,6 +160,13 @@ class MSOEmultiscale(object):
             inputs = [input_layer]
             msoes = [MSOEnet('MSOEnet_0', inputs[0], reuse).output]
 
+            # initial intermediate loss
+            intermediate_flow = conv3d('MSOEnet_intermediate_flow_0', msoes[0],
+                                       1, 1, 2, reuse)
+            self.intermediate_losses = [epe('train_epe_0', intermediate_flow,
+                                        self.target, self.masks,
+                                        tf.reduce_sum(self.masks))]
+
             # MSOEnet pyramid (big to small)
             num_scales = self.user_config['num_scales']
             for scale in range(1, num_scales):
@@ -161,9 +180,22 @@ class MSOEmultiscale(object):
                 small_msoe = MSOEnet('MSOEnet_' + str(scale), inputs[scale],
                                      reuse=True).output
 
-                # upsample MSOEnet output to original input size (batchx1xHxWx64)
-                msoe = bilinear_resample3d('MSOEnet_' + str(scale) + '_upsample',
-                                           small_msoe, tf.shape(inputs[0])[2:4])
+                # upsample MSOEnet output to original input size
+                # (batchx1xHxWx64)
+                msoe = bilinear_resample3d('MSOEnet_' + str(scale) +
+                                           '_upsample',
+                                           small_msoe,
+                                           tf.shape(inputs[0])[2:4])
+
+                # for channel add msoe
+                # msoe = msoe * (2**scale)
+
+                # intermediate loss
+                intermediate_flow = conv3d('MSOEnet_intermediate_flow_' +
+                                           str(scale), msoe, 1, 1, 2, reuse)
+                self.intermediate_losses.append(
+                    epe('train_epe_' + str(scale), intermediate_flow,
+                        self.target, self.masks, tf.reduce_sum(self.masks)))
 
                 msoes.append(msoe)
 
@@ -173,11 +205,20 @@ class MSOEmultiscale(object):
             # channel concat msoe outputs
             concatenated_msoes = channel_concat3d('MSOEnet_concat', msoes)
 
+            # channel add msoe outputs
+            # added_msoes = addn('MSOEnet_addn', msoes)
+
             # third convolution (1x3x3x64*num_scalesx64)
-            conv3 = conv3d('MSOEnet_conv3', concatenated_msoes, 3, 1, 64, reuse)
+            conv3 = conv3d('MSOEnet_conv3', concatenated_msoes, 3, 1, 64,
+                           reuse)
 
             # activation
             h_conv3 = tf.nn.relu(conv3)
+
+            # resblocks (1x3x3x64)
+            # rblock1 = resblock('MSOEnet_rblock1', h_conv3, 3, 1, 64, reuse)
+            # rblock2 = resblock('MSOEnet_rblock2', rblock1, 3, 1, 64, reuse)
+            # rblock3 = resblock('MSOEnet_rblock3', rblock2, 3, 1, 64, reuse)
 
             # fourth convolution (flow out i.e. decode) (1x1x1x64x2)
             output = conv3d('MSOEnet_conv4', h_conv3, 1, 1, 2, reuse)
@@ -201,7 +242,7 @@ class MSOEmultiscale(object):
         with self.graph.as_default():
             with tf.device('/gpu:' + str(self.user_config['gpu'])):
                 optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-                train_step = optimizer.minimize(self.train_epe_squared)
+                train_step = optimizer.minimize(self.train_epe)
 
             """
             Train over iterations, printing loss at each one
@@ -213,7 +254,8 @@ class MSOEmultiscale(object):
                 resume, start_iteration = check_snapshots(run_id)
 
                 # start summary writers
-                summary_writer = tf.summary.FileWriter('logs/' + run_id, sess.graph)
+                summary_writer = tf.summary.FileWriter('logs/' + run_id,
+                                                       sess.graph)
 
                 # start the tensorflow QueueRunners
                 tf.train.start_queue_runners(sess=sess)
@@ -230,17 +272,19 @@ class MSOEmultiscale(object):
                 for i in range(start_iteration, iterations):
                     # retrieve training data
                     data = sess.run([self.data['train']['input'],
-                                     self.data['train']['target']])
+                                     self.data['train']['target'],
+                                     self.data['train']['masks']])
                     input = data[0]
                     target = data[1]
+                    masks = data[2]
 
                     # run a train step
                     results = sess.run([train_step,
-                                        self.train_epe_squared,
+                                        self.train_epe,
                                         self.summaries],
-                                       feed_dict={
-                                           self.input: input,
-                                           self.target: target})
+                                       feed_dict={self.input: input,
+                                                  self.target: target,
+                                                  self.masks: masks})
 
                     # print training information
                     if (i + 1) % print_frequency == 0:
@@ -249,7 +293,7 @@ class MSOEmultiscale(object):
                         remaining_it = iterations - i
                         eta = remaining_it / it_per_sec
                         print '(run ' + run_id + ')' + ' Iteration %d: ' \
-                              'epe squared: %f lr: %f ' \
+                              'epe: %f lr: %f ' \
                               'iter per/s: %f ETA: %s' \
                               % (i + 1, results[1], lr, it_per_sec,
                                  str(datetime.timedelta(seconds=eta)))
@@ -310,7 +354,8 @@ class MSOEmultiscale(object):
 
                         summary = sess.run(self.val_epe_summary,
                                            feed_dict={
-                                             self.val_epe_placeholder: val_epe})
+                                             self.val_epe_placeholder: val_epe
+                                             })
                         summary_writer.add_summary(summary, i + 1)
                         summary_writer.flush()
 
@@ -318,7 +363,8 @@ class MSOEmultiscale(object):
                             val_epe_summary = \
                                 self.val_epe_segmented_summaries[s]['summary']
                             placeholder = \
-                                self.val_epe_segmented_summaries[s]['placeholder']
+                                self.\
+                                val_epe_segmented_summaries[s]['placeholder']
                             summary = \
                                 sess.run(val_epe_summary,
                                          feed_dict={placeholder:
@@ -334,7 +380,8 @@ class MSOEmultiscale(object):
                         except OSError:
                             if not os.path.isdir('snapshots/' + run_id):
                                 raise
-                        saver.save(sess, 'snapshots/' + run_id + '/iter', global_step=i+1)
+                        saver.save(sess, 'snapshots/' + run_id + '/iter',
+                                   global_step=i+1)
 
     # TODO: revisit this code
     def run_test(self):

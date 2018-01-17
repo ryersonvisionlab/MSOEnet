@@ -2,6 +2,8 @@ import os
 import numpy as np
 from src.utilities import *
 import glob
+from imgaug import augmenters as iaa
+from imgaug import parameters as iap
 
 
 class DataSet(object):
@@ -41,24 +43,46 @@ class DataSet(object):
 
         return packaged_images, packaged_flows
 
-    def discrete_rotate(self, input, k, flow=False):
-        if flow:
-            rad = k * (np.pi / 2.0)
-            fx, fy = np.copy(input[:, :, 0]), np.copy(input[:, :, 1])
-            sin = np.sin(rad)
-            cos = np.cos(rad)
-            input[..., 0] = (fx * cos) - (fy * sin)
-            input[..., 1] = (fx * sin) + (fy * cos)
-        return np.rot90(input, k)
+    def augment_batch(self, batches):
+        masks = []
+        aug = iaa.Sequential([
+            iaa.FlowAffine(#scale={'x': (0.9, 1.1), 'y': (0.9, 1.1)},
+                           rotate=(-360, 360),
+                           p_fliplr=0.5,
+                           p_flipud=0.5,
+                           masks=masks, global_only=True),
+            iaa.AdditiveGaussianNoise(scale=(0.0, 0.04 * 255.0),
+                                      global_only=True),
+            iaa.GammaCorrect(gamma=(0.7, 1.5), global_only=True),  # gamma
+            iaa.Add(value=iap.Normal(loc=0, scale=0.2 * 255.0), global_only=True),  # additive brightness change
+            iaa.Multiply(mul=(0.2, 1.4), global_only=True)  # contrast
+        ], random_order=True)
+        images, flows = batches
+        images_result = []
+        flows_result = []
+        for i in range(images.shape[0]):
+            imgs, flow = aug.augment_images(images[i] * 255.0,
+                                            extra=flows[i])
+            imgs = imgs / 255.0
+            images_result.append(imgs)
+            flows_result.append(flow)
+        # deal with irregularly shaped images/flows (not relevant yet)
+        first_shape = images_result[0].shape
+        if all([image.shape == first_shape for image in images_result[1:]]):
+            images_result = np.stack(images_result)
+            flows_result = np.stack(flows_result)
 
-    def augment(self, dataX, dataY):
-        for i in range(dataX.shape[0]):
-            k = np.random.randint(0, 4)
-            if k > 0:
-                for j in range(dataX.shape[1]):
-                    dataX[i][j] = self.discrete_rotate(dataX[i][j], k)
-                dataY[i] = self.discrete_rotate(dataY[i], k, flow=True)
-        return dataX, dataY
+        if len(masks) > 0:
+            masks = np.stack(masks)
+        else:
+            batch_size = flows_result.shape[0]
+            height = flows_result.shape[1]
+            width = flows_result.shape[2]
+            masks = np.ones((batch_size, height, width, 1))
+
+        return images_result.astype(np.float32), \
+            flows_result.astype(np.float32), \
+            masks.astype(np.float32)
 
     # TODO: reduce code reuse between this and validation_data
     def next_batch(self, batch_size, augment_batch=False):
@@ -100,9 +124,12 @@ class DataSet(object):
         packaged_flows = np.array(packaged_flows)
 
         if augment_batch:
-            self.augment(packaged_images, packaged_flows)
-
-        return packaged_images, packaged_flows
+            return self.augment_batch((packaged_images, packaged_flows))
+        else:
+            height = packaged_flows.shape[1]
+            width = packaged_flows.shape[2]
+            return packaged_images, packaged_flows, np.ones((batch_size,
+                                                             height, width, 1))
 
 
 def load_FlyingChairs(data_dir):
@@ -152,6 +179,7 @@ def load_FlyingChairs(data_dir):
 
     return DataSet(train=train_sequences,
                    validation=validation_sequences)
+
 
 def load_UCF101(data_dir):
     train_sequences = []

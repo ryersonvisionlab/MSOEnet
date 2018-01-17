@@ -21,31 +21,26 @@ def data_layer(name, train_filename, batch_size, num_threads):
         with tf.device("/cpu:0"):
             input_shape = list(X_val.shape[1:])
             target_shape = list(y_val.shape[1:])
+            masks_shape = [target_shape[0], target_shape[1], 1]
             queue_runner = QueueRunner(d, input_shape, target_shape,
-                                       batch_size, num_threads)
-            X, y = queue_runner.get_inputs()
+                                       masks_shape, batch_size, num_threads)
+            X, y, masks = queue_runner.get_inputs()
 
-        data = {'train': {'input': X, 'target': y},
+        data = {'train': {'input': X, 'target': y, 'masks': masks},
                 'validation': {'input': X_val, 'target': y_val},
                 'queue_runner': queue_runner}
 
-        return data, input_shape, target_shape
+        return data, input_shape, target_shape, masks_shape
 
 
 def conv3d(name, input_layer, kernel_spatial_size,
            kernel_temporal_size, out_channels, reuse=None):
     with tf.get_default_graph().name_scope(name):
         with tf.variable_scope(name, reuse=reuse):
+
             in_channels = input_layer.get_shape().as_list()[-1]
 
-            if name == 'Gate_conv1':
-                # MSRA initialization (avg variance norm)
-                initializer = tf.contrib.layers \
-                                .variance_scaling_initializer(factor=2.0,
-                                                              mode='FAN_AVG',
-                                                              uniform=False)
-            else:
-                initializer = tf.truncated_normal_initializer(stddev=0.4)
+            initializer = tf.truncated_normal_initializer(stddev=0.4)
 
             # going to be sharing variables
             weights = tf.get_variable('weights',
@@ -80,48 +75,17 @@ def conv3d(name, input_layer, kernel_spatial_size,
         return tf.nn.bias_add(conv_output, biases)
 
 
-def deconv3d(name, input_layer, kernel_spatial_size,
-             spatial_stride, out_shape, out_channels, reuse=None):
+def resblock(name, input_layer, kernel_spatial_size,
+             kernel_temporal_size, out_channels, reuse=None):
     with tf.get_default_graph().name_scope(name):
-        with tf.variable_scope(name, reuse=reuse):
-            in_channels = input_layer.get_shape().as_list()[-1]
-            f_shape = [kernel_spatial_size, kernel_spatial_size,
-                       out_channels, in_channels]
-            width = f_shape[0]
-            height = f_shape[0]
-            f = ceil(width/2.0)
-            c = (2 * f - 1 - f % 2) / (2.0 * f)
-            bilinear = np.zeros([f_shape[0], f_shape[1]])
-            for x in range(width):
-                for y in range(height):
-                    value = (1 - abs(x / f - c)) * (1 - abs(y / f - c))
-                    bilinear[x, y] = value
-            weights = np.zeros(f_shape)
-            for i in range(f_shape[2]):
-                weights[:, :, i, i] = bilinear
-            init = tf.constant_initializer(value=weights,
-                                           dtype=tf.float32)
-            weights = tf.get_variable(name='weights', initializer=init,
-                                      shape=weights.shape)
-
-            weights = tf.reshape(weights, [1, kernel_spatial_size,
-                                 kernel_spatial_size, out_channels, in_channels])
-
-            deconv = tf.nn.conv3d_transpose(input_layer, weights, out_shape,
-                                            strides=[1, 1, spatial_stride,
-                                                     spatial_stride, 1],
-                                            padding='SAME')
-
-            return deconv
-
-
-def upconv3d(name, input_layer, kernel_spatial_size, output_shape,
-             out_channels, reuse=None):
-    with tf.get_default_graph().name_scope(name):
-        up = bilinear_resample3d('upsample', input_layer, output_shape)
-        conv = conv3d('conv3d', up, kernel_spatial_size, 1, out_channels,
-                      reuse)
-        return conv
+        conv1 = conv3d(name + '_conv1', input_layer, kernel_spatial_size,
+                       kernel_temporal_size, out_channels, reuse)
+        h_conv1 = tf.nn.relu(conv1)
+        conv2 = conv3d(name + '_conv2', input_layer, kernel_spatial_size,
+                       kernel_temporal_size, out_channels, reuse)
+        add = conv2 + input_layer
+        output = tf.nn.relu(add)
+        return output
 
 
 def avg_pool3d(name, input_layer, kernel_spatial_size,
@@ -183,24 +147,33 @@ def l1_normalize(name, input_layer, axis=4, eps=1e-12):
         return tf.multiply(input_layer, input_layer_inv_norm)
 
 
-def squared_epe(name, input_layer, target):
+def epe(name, input_layer, target, masks=None, count=None):
     with tf.get_default_graph().name_scope(name):
-        loss = (input_layer[..., 0] - target[..., 0])**2 + \
-               (input_layer[..., 1] - target[..., 1])**2
-        return tf.reduce_mean(loss)
-
-
-def epe(name, input_layer, target, count=None):
-    with tf.get_default_graph().name_scope(name):
-        loss = tf.sqrt((input_layer[..., 0] - target[..., 0])**2 + \
+        loss = tf.sqrt((input_layer[..., 0] - target[..., 0])**2 +
                        (input_layer[..., 1] - target[..., 1])**2)
+        if masks is not None:
+            loss *= masks[..., 0]
         if count is not None:
+            # average loss over valid pixels only if using a mask
             return tf.reduce_sum(loss) / count
         else:
             return tf.reduce_mean(loss)
 
 
-def epe_speedsegmented(name, input_layer, target, num_segments):
+def squared_epe(name, input_layer, target, masks=None, count=None):
+    with tf.get_default_graph().name_scope(name):
+        loss = (input_layer[..., 0] - target[..., 0])**2 + \
+               (input_layer[..., 1] - target[..., 1])**2
+        if masks is not None:
+            loss *= masks[..., 0]
+        if count is not None:
+            # average loss over valid pixels only if using a mask
+            return tf.reduce_sum(loss) / count
+        else:
+            return tf.reduce_mean(loss)
+
+
+def epe_speedsegmented(name, input_layer, target, masks, num_segments):
     with tf.get_default_graph().name_scope(name):
         speed = tf.sqrt(target[..., 0]**2 + target[..., 1]**2)
         losses = []
@@ -214,6 +187,7 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
             else:
                 start = 2**(i-1)
                 end = 2**i
+            # speed mask
             mask = tf.to_float(tf.logical_and(tf.greater_equal(speed, start),
                                               tf.less(speed, end)))
             mask = tf.expand_dims(mask, axis=-1)
@@ -221,7 +195,7 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
             input_masked = input_layer * mask
             count = tf.reduce_sum(mask)
             loss = epe('epe_segment_' + str(i), input_masked,
-                       target_masked, count)
+                       target_masked, masks, count)  # masks is None
             losses.append(loss)
         return losses
 
@@ -229,20 +203,6 @@ def epe_speedsegmented(name, input_layer, target, num_segments):
 def reshape(name, input_layer, output_shape):
     with tf.get_default_graph().name_scope(name):
         return tf.reshape(input_layer, output_shape)
-
-
-def area_resample(name, input_layer, output_shape):
-    with tf.get_default_graph().name_scope(name):
-        return tf.image.resize_area(input_layer, output_shape)
-
-
-def area_resample3d(name, input_layer, output_shape, axis=1):
-    with tf.get_default_graph().name_scope(name):
-        unpacked = tf.unstack(input_layer, axis=axis)
-        for i in range(len(unpacked)):
-            unpacked[i] = area_resample('area_resample', unpacked[i],
-                                        output_shape)
-        return tf.stack(unpacked, axis=axis)
 
 
 def bilinear_resample(name, input_layer, output_shape):
@@ -262,6 +222,11 @@ def bilinear_resample3d(name, input_layer, output_shape, axis=1):
 def channel_concat3d(name, input_layer, axis=4):
     with tf.get_default_graph().name_scope(name):
         return tf.concat(axis=axis, values=input_layer)
+
+
+def addn(name, input_layer):
+    with tf.get_default_graph().name_scope(name):
+        return tf.add_n(input_layer)
 
 
 def pack(name, input_layer, axis):
@@ -292,7 +257,7 @@ def leaky_relu(input_layer, alpha=0.01):
 
 
 def relu(input_layer):
-	return tf.nn.relu(input_layer)
+    return tf.nn.relu(input_layer)
 
 
 def elu(input_layer, alpha=1.0):
